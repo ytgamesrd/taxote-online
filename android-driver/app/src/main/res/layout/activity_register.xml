@@ -1,0 +1,172 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/registerRoot"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/background"
+    android:orientation="vertical">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="66dp"
+        android:background="@color/navy"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp">
+
+        <Button
+            android:id="@+id/btnBack"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:background="?android:attr/selectableItemBackground"
+            android:text="←"
+            android:textColor="@color/surface"
+            android:textSize="20sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/stepTitle"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="12dp"
+            android:layout_weight="1"
+            android:text="Registro: Paso 1"
+            android:textColor="@color/surface"
+            android:textSize="18sp"
+            android:textStyle="bold" />
+
+        <ProgressBar
+            android:id="@+id/stepProgress"
+            style="?android:attr/progressBarStyleHorizontal"
+            android:layout_width="80dp"
+            android:layout_height="wrap_content"
+            android:max="7"
+            android:progress="1"
+            android:progressTint="@color/yellow" />
+    </LinearLayout>
+
+    <ViewFlipper
+        android:id="@+id/viewFlipper"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:padding="20dp">
+
+        <!-- PASO 1: Info Personal -->
+        <ScrollView android:layout_width="match_parent" android:layout_height="match_parent">
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical">
+                <TextView style="@style/FieldLabel" android:text="Nombre real" />
+                <EditText android:id="@+id/regFirstName" style="@style/FieldInput" android:hint="Ej. Juan" android:inputType="textCapWords" />
+                <TextView style="@style/FieldLabel" android:text="Apellido real" />
+                <EditText android:id="@+id/regLastName" style="@style/FieldInput" android:hint="Ej. Pérez" android:inputType="textCapWords" />
+                <TextView style="@style/FieldLabel" android:text="Foto de perfil real" />
+                <Button android:id="@+id/btnPickProfile" style="@style/SecondaryButton" android:text="Seleccionar foto de perfil" />
+                <ImageView android:id="@+id/imgProfilePreview" style="@style/ImagePreview" />
+            </LinearLayout>
+        </ScrollView>
+
+        <!-- PASO 2: Identidad -->
+        <ScrollView android:layout_width="match_parent" android:layout_height="match_parent">
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical">
+                <TextView style="@style/FieldLabel" android:text="Número de Cédula ID" />
+                <EditText android:id="@+id/regCedula" style="@style/FieldInput" android:hint="11 números" android:inputType="number" android:maxLength="11" />
+                <TextView style="@style/FieldLabel" android:text="Foto de Cédula (Frente)" />
+                <Button android:id="@+id/btnPickIdFront" style="@style/SecondaryButton" android:text="Seleccionar Cédula Frente" />
+                <ImageView android:id="@+id/imgIdFrontPreview" style="@style/ImagePreview" />
+                <TextView style="@style/FieldLabel" android:text="Foto de Cédula (Detrás)" />
+                <Button android:id="@+id/btnPickIdBack" style="@style/SecondaryButton" android:text="Seleccionar Cédula Atrás" />
+                <ImageView android:id="@+id/imgIdBackPreview" style="@style/ImagePreview" />
+            </LinearLayout>
+        </ScrollView>
+
+        <!-- PASO 3: Fecha de Nacimiento -->
+        <LinearLayout android:layout_width="match_parent" android:layout_height="match_parent" android:orientation="vertical">
+            <TextView style="@style/FieldLabel" android:text="Fecha de nacimiento (de tu cédula)" />
+            <DatePicker android:id="@+id/regDob" android:layout_width="match_parent" android:layout_height="wrap_content" android:calendarViewShown="false" android:datePickerMode="spinner" />
+        </LinearLayout>
+
+        <!-- PASO 4: Fotos del Vehículo -->
+        <ScrollView android:layout_width="match_parent" android:layout_height="match_parent">
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical">
+                <TextView style="@style/FieldLabel" android:text="Fotos del vehículo" />
+                <Button android:id="@+id/btnPickVFront" style="@style/SecondaryButton" android:text="Foto Frente del Vehículo" />
+                <ImageView android:id="@+id/imgVFrontPreview" style="@style/ImagePreview" />
+                <Button android:id="@+id/btnPickVBack" style="@style/SecondaryButton" android:text="Foto Detrás del Vehículo" />
+                <ImageView android:id="@+id/imgVBackPreview" style="@style/ImagePreview" />
+                <Button android:id="@+id/btnPickVRight" style="@style/SecondaryButton" android:text="Foto Lado Derecho del Vehículo" />
+                <ImageView android:id="@+id/imgVRightPreview" style="@style/ImagePreview" />
+            </LinearLayout>
+        </ScrollView>
+
+        <!-- PASO 5: Detalles del Vehículo -->
+        <ScrollView android:layout_width="match_parent" android:layout_height="match_parent">
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical">
+                <TextView style="@style/FieldLabel" android:text="Placa del vehículo" />
+                <EditText android:id="@+id/regPlate" style="@style/FieldInput" android:hint="A123456" android:inputType="textCapCharacters" />
+                <TextView style="@style/FieldLabel" android:text="Color" />
+                <Spinner android:id="@+id/regColor" style="@style/FieldInput" />
+                <TextView style="@style/FieldLabel" android:text="Marca" />
+                <Spinner android:id="@+id/regBrand" style="@style/FieldInput" />
+                <TextView style="@style/FieldLabel" android:text="Modelo" />
+                <Spinner android:id="@+id/regModel" style="@style/FieldInput" />
+                <TextView style="@style/FieldLabel" android:text="Año" />
+                <EditText android:id="@+id/regYear" style="@style/FieldInput" android:hint="Ej. 2020" android:inputType="number" android:maxLength="4" />
+            </LinearLayout>
+        </ScrollView>
+
+        <!-- PASO 6: Tipo de Vehículo -->
+        <LinearLayout android:layout_width="match_parent" android:layout_height="match_parent" android:orientation="vertical">
+            <TextView style="@style/FieldLabel" android:text="¿Qué tipo de vehículo usas?" />
+            <Spinner android:id="@+id/regVType" style="@style/FieldInput" />
+            <TextView style="@style/FieldLabel" android:layout_marginTop="20dp" android:text="Método de pago preferido" />
+            <Spinner android:id="@+id/regPayment" style="@style/FieldInput" />
+            <TextView style="@style/FieldLabel" android:layout_marginTop="20dp" android:text="Correo de contacto" />
+            <EditText android:id="@+id/regEmail" style="@style/FieldInput" android:hint="correo@ejemplo.com" android:inputType="textEmailAddress" />
+            <TextView style="@style/FieldLabel" android:text="Teléfono de contacto" />
+            <EditText android:id="@+id/regPhone" style="@style/FieldInput" android:hint="8091112222" android:inputType="phone" />
+            <TextView style="@style/FieldLabel" android:text="Contraseña para tu cuenta" />
+            <EditText android:id="@+id/regPass" style="@style/FieldInput" android:hint="Mínimo 8 caracteres" android:inputType="textPassword" />
+        </LinearLayout>
+
+        <!-- PASO 7: Términos y Condiciones -->
+        <ScrollView android:layout_width="match_parent" android:layout_height="match_parent">
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical">
+                <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Términos y Condiciones de TAXOTE" android:textColor="@color/navy" android:textSize="20sp" android:textStyle="bold" />
+                <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:text="Al registrarte como conductor en TAXOTE, aceptas cumplir con nuestras políticas de seguridad, respeto al pasajero y mantenimiento de tu vehículo. TAXOTE se reserva el derecho de activar o suspender cuentas según el cumplimiento de estas normas." android:textColor="@color/ink" />
+                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="30dp" android:orientation="horizontal">
+                    <Button android:id="@+id/btnCancelReg" android:layout_width="0dp" android:layout_height="56dp" android:layout_weight="1" android:background="@drawable/bg_secondary_button" android:text="Cancelar" android:textAllCaps="false" android:textColor="@color/navy" />
+                    <Button android:id="@+id/btnAcceptReg" android:layout_width="0dp" android:layout_height="56dp" android:layout_marginStart="12dp" android:layout_weight="1" android:background="@drawable/bg_primary_button" android:text="Aceptar" android:textAllCaps="false" android:textColor="@color/surface" />
+                </LinearLayout>
+            </LinearLayout>
+        </ScrollView>
+
+        <!-- PASO 8: Pantalla de Espera -->
+        <LinearLayout android:layout_width="match_parent" android:layout_height="match_parent" android:gravity="center" android:orientation="vertical">
+            <ProgressBar android:layout_width="64dp" android:layout_height="64dp" android:indeterminateTint="@color/navy" />
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="20dp" android:gravity="center" android:text="Esperando a que TAXOTE active su cuenta" android:textColor="@color/navy" android:textSize="22sp" android:textStyle="bold" />
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:gravity="center" android:text="El proceso puede tardar de 5 minutos a una hora." android:textColor="@color/muted" />
+            <Button android:id="@+id/btnGoHome" android:layout_width="wrap_content" android:layout_height="56dp" android:layout_marginTop="40dp" android:background="@drawable/bg_secondary_button" android:paddingStart="20dp" android:paddingEnd="20dp" android:text="Volver al menú de inicio" android:textAllCaps="false" android:textColor="@color/navy" />
+        </LinearLayout>
+
+    </ViewFlipper>
+
+    <LinearLayout
+        android:id="@+id/footerActions"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:padding="20dp">
+
+        <Button
+            android:id="@+id/btnNext"
+            android:layout_width="match_parent"
+            android:layout_height="58dp"
+            android:background="@drawable/bg_primary_button"
+            android:text="Siguiente"
+            android:textAllCaps="false"
+            android:textColor="@color/surface"
+            android:textSize="16sp"
+            android:textStyle="bold" />
+    </LinearLayout>
+
+</LinearLayout>

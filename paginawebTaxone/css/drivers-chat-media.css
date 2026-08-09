@@ -1,0 +1,7 @@
+.message-composer { position: relative; grid-template-columns: auto minmax(0, 1fr) auto; }
+.message-composer > input:not([type="file"]) { height: 43px; padding: 0 13px; border: 1px solid #cddae0; border-radius: 7px; outline: 0; color: #173d53; font: inherit; font-size: 11px; }
+.photo-picker { display: grid; place-items: center; width: 43px; height: 43px; border: 1px solid #cddae0; border-radius: 7px; color: #0b2e47; background: #f4f8fa; cursor: pointer; font-size: 20px; }
+.photo-picker input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.photo-name { position: absolute; right: 140px; bottom: 63px; max-width: 260px; padding: 6px 9px; border-radius: 5px; color: #0b2e47; background: #fff1b2; font-size: 8px; font-weight: 700; }
+.chat-photo { display: block; width: min(320px, 65vw); max-height: 330px; margin-top: 7px; border-radius: 9px; object-fit: cover; }
+@media (max-width: 760px) { .photo-name { right: 88px; bottom: 57px; } }

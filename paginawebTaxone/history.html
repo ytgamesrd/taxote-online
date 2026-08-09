@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#071f33" />
+    <title>Historial de viajes | TAXOTE</title>
+    <link rel="icon" type="image/svg+xml" href="favicon.svg?v=20260806-1" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Outfit:wght@500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="css/styles.css?v=20260806-26" />
+    <link rel="stylesheet" href="css/history.css?v=20260806-6" />
+  </head>
+  <body class="history-body">
+    <header class="topbar">
+      <button id="menu-button" class="menu-button" aria-label="Abrir menú" aria-expanded="false" aria-controls="side-menu"><span></span><span></span><span></span></button>
+      <a class="brand" href="/"><span class="brand-mark">T</span><span>TAXOTE</span></a>
+      <div class="top-actions"><a class="history-back-top" href="/">Central de reservas</a></div>
+    </header>
+
+    <div id="drawer-overlay" class="drawer-overlay" hidden></div>
+    <aside id="side-menu" class="side-menu" aria-hidden="true">
+      <div class="side-menu-head"><a class="drawer-brand" href="/"><span class="brand-mark">T</span><span>TAXOTE</span></a><button id="close-menu" class="close-menu" aria-label="Cerrar menú">×</button></div>
+      <nav class="side-navigation" aria-label="Navegación principal">
+        <a href="/"><span>＋</span> Nueva reserva</a>
+        <a href="/drivers.html"><span>♙</span> Conductores</a>
+        <a href="/deposits.html"><span>💰</span> Depósitos</a>
+        <a href="/history.html" class="active"><span>◷</span> Historial de viajes</a>
+        <a href="/drivers-chat.html"><span>▤</span> Chat de conductores</a>
+        <a href="/conversation-history.html"><span>▧</span> Historial de conversación</a>
+        <a href="/user.html"><span>◉</span> TAXOTE User</a>
+        <a href="#"><span>▦</span> Reportes</a>
+        <a href="#"><span>⚙</span> Configuración</a>
+      </nav>
+      <div class="side-menu-footer"><p><b>Administrador</b><small>Operaciones TAXOTE</small></p></div>
+    </aside>
+
+    <main class="history-page">
+      <header class="history-titlebar">
+        <div><span class="history-kicker">VIAJES</span><h1>Historial de viajes</h1><p>Registro completo de servicios cancelados y terminados.</p></div>
+        <a href="/#active-trips">← Volver a viajes activos</a>
+      </header>
+
+      <section class="history-summary-strip" aria-label="Resumen general de viajes">
+        <article class="completed"><small>TERMINADOS</small><strong id="history-completed">0</strong><span>viajes</span></article>
+        <article class="active"><small>ACTIVOS</small><strong id="history-active">0</strong><span>ahora</span></article>
+        <article class="today"><small>HOY</small><strong id="history-today">0</strong><span>cerrados</span></article>
+        <article class="cancelled"><small>CANCELADOS</small><strong id="history-cancelled">0</strong><span>viajes</span></article>
+        <article class="total"><small>TOTAL</small><strong id="history-total">0</strong><span>cerrados</span></article>
+      </section>
+
+      <section class="history-card">
+        <div class="history-card-heading">
+          <div><span class="history-kicker">REGISTRO OPERATIVO</span><h2>Historial completo</h2></div>
+          <div class="history-actions">
+            <label class="history-search"><span>⌕</span><input id="history-search" type="search" placeholder="Buscar en todo el historial" aria-label="Buscar en el historial" /></label>
+            <span id="history-result-count" class="history-result-count">0 resultados</span>
+            <button id="clear-history-filters" class="history-clear" type="button">Limpiar</button>
+            <button id="export-history" class="history-export" type="button">⇩ Exportar CSV</button>
+            <button id="refresh-history" class="history-refresh" type="button">↻</button>
+          </div>
+        </div>
+
+        <div class="history-table-wrap">
+          <table>
+            <thead>
+              <tr class="history-column-headings"><th>ID</th><th>Fecha del viaje</th><th>Tipo</th><th>Pasajero</th><th>Teléfono</th><th>Conductor</th><th>Dirección de recogida</th><th>Dirección de destino</th><th>Estado</th><th>Precio</th><th>Distancia</th><th>Duración</th><th>Fecha de cierre</th><th>Motivo / resultado</th><th>Cerrado por</th></tr>
+              <tr class="history-filter-row">
+                <th><input id="history-id" type="search" placeholder="Código…" aria-label="Filtrar por ID" /></th>
+                <th><input id="history-from" type="date" aria-label="Filtrar desde fecha del viaje" /></th>
+                <th><select id="history-type" aria-label="Filtrar por tipo"><option value="">Todos</option><option value="registered">Registrado</option><option value="guest">Invitado</option></select></th>
+                <th><input id="history-passenger" type="search" placeholder="Pasajero…" aria-label="Filtrar por pasajero" /></th>
+                <th><input id="history-phone" type="search" inputmode="tel" placeholder="Teléfono…" aria-label="Filtrar por teléfono" /></th>
+                <th><input id="history-driver" type="search" placeholder="Conductor…" aria-label="Filtrar por conductor" /></th>
+                <th><input id="history-pickup" type="search" placeholder="Recogida…" aria-label="Filtrar por recogida" /></th>
+                <th><input id="history-destination" type="search" placeholder="Destino…" aria-label="Filtrar por destino" /></th>
+                <th><select id="history-status" aria-label="Filtrar por estado"><option value="">Todos</option><option value="cancelled">Cancelado</option><option value="completed">Terminado</option></select></th>
+                <th><input id="history-price" type="number" min="0" placeholder="Mínimo…" aria-label="Filtrar por precio mínimo" /></th>
+                <th><input id="history-distance" type="number" min="0" step="0.1" placeholder="Máx. km" aria-label="Filtrar por distancia máxima" /></th>
+                <th><input id="history-duration" type="number" min="0" placeholder="Máx. min" aria-label="Filtrar por duración máxima" /></th>
+                <th><input id="history-to" type="date" aria-label="Filtrar hasta fecha de cierre" /></th>
+                <th><input id="history-reason" type="search" placeholder="Motivo…" aria-label="Filtrar por motivo" /></th>
+                <th><select id="history-closed-by" aria-label="Filtrar por quién cerró"><option value="">Todos</option><option value="dispatcher">Central</option><option value="passenger">Pasajero</option><option value="driver">Conductor</option></select></th>
+              </tr>
+            </thead>
+            <tbody id="history-table-body"><tr><td colspan="15" class="history-empty">Cargando historial…</td></tr></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+
+    <div id="history-toast" class="toast" role="status" aria-live="polite"></div>
+    <script src="js/history.js?v=20260806-2"></script>
+  </body>
+</html>
