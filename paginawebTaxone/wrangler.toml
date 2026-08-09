@@ -1,9 +1,9 @@
 name = "taxote-online"
-main = "_worker.js"
+main = "server.js"
 compatibility_date = "2026-08-09"
 
 [assets]
-directory = "."
+directory = "public"
 binding = "ASSETS"
 
 [[d1_databases]]
