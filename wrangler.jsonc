@@ -1,0 +1,17 @@
+{
+  "name": "taxote-online",
+  "compatibility_date": "2026-08-09",
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
+  "assets": {
+    "directory": "paginawebTaxone"
+  },
+  "d1_databases": [
+    {
+      "binding": "taxote_db",
+      "database_name": "taxote-db",
+      "database_id": "1678e68a-cfaf-4ce3-877a-f6d051ba13f9"
+    }
+  ]
+}
