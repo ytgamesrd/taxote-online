@@ -4,6 +4,7 @@
   "compatibility_flags": [
     "nodejs_compat"
   ],
+  "main": "paginawebTaxone/_worker.js",
   "assets": {
     "directory": "paginawebTaxone"
   },
