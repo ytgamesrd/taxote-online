@@ -1,12 +1,10 @@
 const ACTIVE_RIDE_STATUSES = ["accepted", "driver_arriving", "arrived", "in_progress"];
-const USER_CANCELLABLE_STATUSES = ["pending", "accepted", "driver_arriving", "arrived"];
 const SESSION_DAYS = 30;
 let schemaReady = false;
 
 const CORE_SCHEMA = [
   `CREATE TABLE IF NOT EXISTS addresses (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, type TEXT, house_number TEXT, street TEXT, suburb TEXT, city TEXT, province TEXT, postcode TEXT, lat REAL NOT NULL, lon REAL NOT NULL, place_id TEXT UNIQUE)`,
   `CREATE INDEX IF NOT EXISTS idx_addr_lat_lon ON addresses(lat, lon)`,
-  `CREATE VIRTUAL TABLE IF NOT EXISTS addresses_fts USING fts5(name, street, suburb, city, province, content='addresses', content_rowid='id', tokenize='unicode61 remove_diacritics 2')`,
   `CREATE TABLE IF NOT EXISTS profiles (id INTEGER PRIMARY KEY AUTOINCREMENT, public_id TEXT NOT NULL UNIQUE, kind TEXT NOT NULL DEFAULT 'guest', name TEXT NOT NULL, phone TEXT NOT NULL UNIQUE, email TEXT COLLATE NOCASE UNIQUE, password_hash TEXT, password_salt TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS sessions (token_hash TEXT PRIMARY KEY, profile_id INTEGER NOT NULL, expires_at TEXT NOT NULL, created_at TEXT NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS drivers (id INTEGER PRIMARY KEY AUTOINCREMENT, public_id TEXT NOT NULL UNIQUE, first_name TEXT NOT NULL, last_name TEXT NOT NULL, email TEXT NOT NULL COLLATE NOCASE UNIQUE, phone TEXT NOT NULL UNIQUE, password_hash TEXT NOT NULL, password_salt TEXT NOT NULL, cedula TEXT NOT NULL UNIQUE, vehicle_type TEXT NOT NULL, vehicle_brand TEXT NOT NULL, vehicle_model TEXT NOT NULL, vehicle_color TEXT NOT NULL, vehicle_plate TEXT NOT NULL COLLATE NOCASE UNIQUE, payment_method TEXT, points_balance INTEGER NOT NULL DEFAULT 0, fcm_token TEXT, status TEXT NOT NULL DEFAULT 'pending', review_message TEXT, is_online INTEGER NOT NULL DEFAULT 0, is_available INTEGER NOT NULL DEFAULT 0, current_lat REAL, current_lon REAL, current_accuracy REAL, current_bearing REAL, current_speed_kph REAL, last_seen_at TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, reviewed_at TEXT, last_login_at TEXT)`,
@@ -22,59 +20,33 @@ const CORE_SCHEMA = [
   `CREATE TABLE IF NOT EXISTS reports (id INTEGER PRIMARY KEY AUTOINCREMENT, public_id TEXT NOT NULL UNIQUE, reporter_type TEXT NOT NULL, reporter_id TEXT, reporter_name TEXT NOT NULL, ride_id TEXT, category TEXT NOT NULL, description TEXT NOT NULL, photo_data TEXT, status TEXT NOT NULL DEFAULT 'new', created_at TEXT NOT NULL, updated_at TEXT NOT NULL, read_at TEXT, resolved_at TEXT)`,
   `CREATE INDEX IF NOT EXISTS idx_rides_status_created ON rides(status,created_at)`,
   `CREATE INDEX IF NOT EXISTS idx_rides_driver_status ON rides(driver_id,status)`,
-  `CREATE INDEX IF NOT EXISTS idx_rides_phone_created ON rides(passenger_phone,created_at)`,
-  `CREATE INDEX IF NOT EXISTS idx_driver_seen ON drivers(status,is_online,last_seen_at)`,
-  `CREATE INDEX IF NOT EXISTS idx_chat_driver ON chat_messages(channel,driver_id,created_at)`,
-  `CREATE INDEX IF NOT EXISTS idx_chat_ride ON chat_messages(ride_id,created_at)`
+  `CREATE INDEX IF NOT EXISTS idx_driver_seen ON drivers(status,is_online,last_seen_at)`
 ];
-
-async function postWhatsApp(request, env) {
-  const WHATSAPP_TOKEN = env.WHATSAPP_ACCESS_TOKEN || "EAAOmZBRfZC5DgBSFgk9mtd6b9UZAafRo1YJYCjHZBhmWta99GaXKVG7cJWQ9XrJzq1W2sTXABR5TJxsEjfxmXZA9qs8wTxdSnFYiLrZBprmHoA7DStZAXHf1G0lBQxcHVigA0kahOZBL0ZC9dyRvZCTh8gEkSfznvZCHRZBOtUsCHPUZAuyRZA432kAR8wqOSBRXfXwnQCo0XvFv9taxVMr3ZCSSf3TYbxOruikjhEJ84TGspKsl5NZB6bay";
-  if (request.method === "GET") {
-    const url = new URL(request.url), mode = url.searchParams.get("hub.mode"), token = url.searchParams.get("hub.verify_token"), challenge = url.searchParams.get("hub.challenge");
-    if (mode === "subscribe" && token === "taxote_whatsapp_verify_token") return new Response(challenge, { status: 200 });
-    return new Response("Forbidden", { status: 403 });
-  }
-  if (request.method === "POST") {
-    try {
-      const body = await request.json(), db = env.taxote_db;
-      if (body.object === "whatsapp_business_account") {
-        const value = body.entry?.[0]?.changes?.[0]?.value, message = value?.messages?.[0];
-        if (message) {
-          const from = message.from, text = message.text?.body || "Mensaje de WhatsApp", name = value?.contacts?.[0]?.profile?.name || "Usuario WhatsApp";
-          await db.prepare(`INSERT INTO admin_notifications(kind,title,body,entity_type,entity_id,created_at) VALUES(?,?,?,?,?,?)`).bind("whatsapp", `WhatsApp de ${name}`, text, "whatsapp", from, new Date().toISOString()).run();
-        }
-      }
-      return new Response("EVENT_RECEIVED", { status: 200 });
-    } catch (e) { return new Response("Error", { status: 500 }); }
-  }
-}
 
 export default {
   async fetch(request, env) {
     const url = new URL(request.url), db = env.taxote_db;
-    if (url.pathname === "/api/whatsapp/webhook") return postWhatsApp(request, env);
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders(request) });
 
     try {
       if (!db) throw new HttpError(503, "Base de datos no vinculada.");
       await ensureSchema(db);
-      const path = url.pathname.replace(/\/$/, ""), method = request.method;
 
-      // Admin Login
+      const path = url.pathname.replace(/\/$/, "");
+      const method = request.method;
+
       if (path === "/api/admin/login" && method === "POST") {
         const body = await bodyJson(request);
         if (body.username === "TAXOTEadmin1995" && body.password === "123Taxote123@1995") {
-          const token = id("ADM"), expires = new Date(); expires.setHours(23, 59, 59, 999);
+          const token = id("ADM");
           return json({ ok: true, token }, 200, {
-            "Set-Cookie": `taxote_admin_session=${token}; Path=/; Secure; SameSite=Lax; HttpOnly; Expires=${expires.toUTCString()}`,
+            "Set-Cookie": `taxote_admin_session=${token}; Path=/; Secure; SameSite=Lax; HttpOnly`,
             ...corsHeaders(request)
           });
         }
-        throw new HttpError(401, "Usuario o contraseña de administrador incorrectos.");
+        throw new HttpError(401, "Admin incorrecto.");
       }
 
-      // Admin Logout
       if (path === "/api/admin/logout" && method === "POST") {
         return json({ ok: true }, 200, {
           "Set-Cookie": "taxote_admin_session=; Path=/; Secure; SameSite=Lax; HttpOnly; Max-Age=0",
@@ -82,29 +54,18 @@ export default {
         });
       }
 
-      // Midnight cleanup
-      const now = new Date();
-      if (now.getHours() === 0 && now.getMinutes() < 5) await db.prepare("DELETE FROM chat_messages WHERE channel IN ('private', 'public')").run();
-
-      // Middleware
-      const adminPaths = ["/api/admin/", "/api/dispatch/", "/reports.html", "/drivers.html", "/deposits.html", "/history.html", "/drivers-chat.html", "/conversation-history.html"];
-      const isHtml = !path.startsWith("/api/") && (path.endsWith(".html") || path === "" || path === "/");
-      const isAdmin = adminPaths.some(p => path.startsWith(p)) || (isHtml && (path === "" || path === "/" || adminPaths.some(p => path === p.replace(".html", ""))));
-
+      const adminPaths = ["/api/admin/", "/api/dispatch/", "/reports.html", "/drivers.html", "/history.html"];
+      const isAdmin = adminPaths.some(p => path.startsWith(p));
       if (isAdmin) {
         const cookies = parseCookies(request);
-        if (!cookies.taxote_admin_session) {
-          if (!path.startsWith("/api/")) return Response.redirect(`${url.origin}/admin-login.html?next=${encodeURIComponent(url.pathname + url.search)}`, 302);
-          throw new HttpError(401, "No autorizado.");
-        }
+        if (!cookies.taxote_admin_session) throw new HttpError(401, "No autorizado.");
       }
 
       if (!url.pathname.startsWith("/api/")) return env.ASSETS.fetch(request);
       return await handleApi(request, env, url);
     } catch (error) {
       const status = error instanceof HttpError ? error.status : 500;
-      console.error("TAXOTE API ERROR:", error);
-      return json({ error: error.message || "Ocurrió un error interno." }, status, corsHeaders(request));
+      return json({ error: error.message || "Error interno." }, status, corsHeaders(request));
     }
   }
 };
@@ -113,7 +74,7 @@ class HttpError extends Error { constructor(status, message) { super(message); t
 async function ensureSchema(db) { if (!schemaReady) { await db.batch(CORE_SCHEMA.map(s => db.prepare(s))); schemaReady = true; } }
 
 function corsHeaders(request) {
-  const origin = request.headers.get("Origin") || new URL(request.url).origin;
+  const origin = request.headers.get("Origin") || "*";
   return {
     "Access-Control-Allow-Origin": origin,
     "Access-Control-Allow-Methods": "GET,POST,DELETE,PATCH,OPTIONS",
@@ -143,260 +104,94 @@ function parseCookies(req) {
     const i = p.indexOf("=");
     if (i > 0) {
       const key = p.slice(0, i).trim();
-      const val = p.slice(i + 1).trim();
-      c[key] = decodeURIComponent(val);
+      c[key] = decodeURIComponent(p.slice(i + 1).trim());
     }
   });
   return c;
 }
 
-function sessionCookie(n, t, cl = false) { return `${n}=${cl ? "" : encodeURIComponent(t)}; Path=/; Secure; SameSite=Lax; Max-Age=${cl ? 0 : SESSION_DAYS * 86400}`; }
-function bytesToHex(b) { return [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, "0")).join(""); }
-async function sha256(v) { return bytesToHex(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(v))); }
-async function passwordHash(p, s) { const k = await crypto.subtle.importKey("raw", new TextEncoder().encode(p), "PBKDF2", false, ["deriveBits"]), b = await crypto.subtle.deriveBits({ name: "PBKDF2", hash: "SHA-256", salt: new TextEncoder().encode(s), iterations: 100000 }, k, 256); return bytesToHex(b); }
-async function createSession(db, t, o, idVal) { const tok = `${crypto.randomUUID()}${crypto.randomUUID()}`.replaceAll("-", ""), c = nowIso(), e = new Date(Date.now() + SESSION_DAYS * 86400000).toISOString(); await db.prepare(`INSERT INTO ${t}(token_hash,${o},expires_at,created_at) VALUES(?,?,?,?)`).bind(await sha256(tok), idVal, e, c).run(); return tok; }
-async function userSession(req, db) { const t = parseCookies(req).taxote_user_session; if (!t) return null; return db.prepare(`SELECT p.* FROM sessions s JOIN profiles p ON p.id=s.profile_id WHERE s.token_hash=? AND s.expires_at>?`).bind(await sha256(t), nowIso()).first(); }
+async function sha256(v) { return [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(v)))].map(x => x.toString(16).padStart(2, "0")).join(""); }
+async function passwordHash(p, s) { const k = await crypto.subtle.importKey("raw", new TextEncoder().encode(p), "PBKDF2", false, ["deriveBits"]), b = await crypto.subtle.deriveBits({ name: "PBKDF2", hash: "SHA-256", salt: new TextEncoder().encode(s), iterations: 100000 }, k, 256); return [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, "0")).join(""); }
+async function createSession(db, t, o, idVal) { const tok = crypto.randomUUID().replaceAll("-", ""), e = new Date(Date.now() + SESSION_DAYS * 86400000).toISOString(); await db.prepare(`INSERT INTO ${t}(token_hash,${o},expires_at,created_at) VALUES(?,?,?,?)`).bind(await sha256(tok), idVal, e, nowIso()).run(); return tok; }
 async function driverSession(req, db) { const t = parseCookies(req).taxote_driver_session; if (!t) return null; return db.prepare(`SELECT d.* FROM driver_sessions s JOIN drivers d ON d.id=s.driver_id WHERE s.token_hash=? AND s.expires_at>?`).bind(await sha256(t), nowIso()).first(); }
 
-function driverView(row, detailed = false) {
-  const v = { id: row.public_id, name: `${row.first_name} ${row.last_name}`.trim(), phone: row.phone, email: row.email, vehiclePlate: row.vehicle_plate, vehicleBrand: row.vehicle_brand, vehicleModel: row.vehicle_model, vehicleColor: row.vehicle_color, vehicleType: row.vehicle_type, status: row.status, online: Boolean(row.is_online), points: Number(row.points_balance || 0), createdAt: row.created_at };
-  if (detailed) v.documents = { selfie: documentUrl(row.public_id, "selfie"), idFront: documentUrl(row.public_id, "idFront"), vehicle: documentUrl(row.public_id, "vehicle") };
-  return v;
+function driverView(row) {
+  return { id: row.public_id, name: `${row.first_name} ${row.last_name}`.trim(), phone: row.phone, email: row.email, vehiclePlate: row.vehicle_plate, vehicleBrand: row.vehicle_brand, vehicleModel: row.vehicle_model, vehicleColor: row.vehicle_color, vehicleType: row.vehicle_type, status: row.status, online: Boolean(row.is_online) };
 }
-function documentUrl(idVal, k) { return `/api/admin/drivers/${encodeURIComponent(idVal)}/document/${encodeURIComponent(k)}`; }
-function addressView(row) { return { display_name: formatAddress(row), lat: Number(row.lat), lon: Number(row.lon), id: row.place_id || String(row.id) }; }
-function formatAddress(row) { return [row.house_number, row.street, row.suburb, row.city].filter(Boolean).join(", "); }
-function safeNumber(v, n) { const num = Number(v); if (!Number.isFinite(num)) throw new HttpError(400, `${n} inválido.`); return num; }
 
 async function handleApi(request, env, url) {
   const db = env.taxote_db, path = url.pathname.replace(/\/$/, ""), method = request.method;
   const headers = corsHeaders(request);
 
-  if (path === "/api/health") return json({ ok: true }, 200, headers);
-  if (path === "/api/maps-status") return json({ googleConfigured: false, provider: "OSM" }, 200, headers);
-
-  if (path === "/api/geocode" && method === "GET") {
-    const q = clean(url.searchParams.get("q")); if (q.length < 2) return json([], 200, headers);
-    const { results } = await db.prepare("SELECT * FROM addresses WHERE name LIKE ? OR street LIKE ? LIMIT 10").bind(`%${q}%`, `%${q}%`).all();
-    return json(results.map(addressView), 200, headers);
-  }
-  if (path === "/api/reverse" && method === "GET") {
-    const lat = safeNumber(url.searchParams.get("lat"), "Lat"), lon = safeNumber(url.searchParams.get("lon"), "Lon");
-    const row = await db.prepare("SELECT * FROM addresses ORDER BY ((lat-?)*(lat-?)+(lon-?)*(lon-?)) LIMIT 1").bind(lat, lat, lon, lon).first();
-    return row ? json(addressView(row), 200, headers) : json({ error: "No encontrada" }, 404, headers);
-  }
-
-  // Driver Auth
-  if (path === "/api/driver/register" && method === "POST") {
-    const body = await bodyJson(request);
-    const salt = crypto.randomUUID(), hash = await passwordHash(body.password, salt), stamp = nowIso(), publicId = id("DRV");
-    await db.prepare(`INSERT INTO drivers(public_id,first_name,last_name,email,phone,password_hash,password_salt,cedula,vehicle_type,vehicle_brand,vehicle_model,vehicle_color,vehicle_plate,payment_method,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,'pending',?,?)`).bind(publicId, clean(body.firstName), clean(body.lastName), clean(body.email).toLowerCase(), phone(body.phone), hash, salt, clean(body.cedula), clean(body.vehicleType), clean(body.vehicleBrand), clean(body.vehicleModel), clean(body.vehicleColor), clean(body.vehiclePlate).toUpperCase(), clean(body.paymentMethod), stamp, stamp).run();
-    return json({ ok: true, driverId: publicId }, 201, headers);
-  }
-
   if (path === "/api/driver/login" && method === "POST") {
     const body = await bodyJson(request);
     const input = clean(body.phone || body.email);
-    const p = phone(input);
-    const e = input.toLowerCase();
-
+    const p = phone(input), e = input.toLowerCase();
     const driver = await db.prepare(`SELECT * FROM drivers WHERE phone=? OR email=?`).bind(p, e).first();
     if (!driver || await passwordHash(body.password, driver.password_salt) !== driver.password_hash) throw new HttpError(401, "Credenciales incorrectas.");
-    if (driver.status !== "active") throw new HttpError(403, "Cuenta no activa. Contacte a soporte.");
-
+    if (driver.status !== "active") throw new HttpError(403, "Cuenta no activa.");
     const token = await createSession(db, "driver_sessions", "driver_id", driver.id);
     return json({ ok: true, driver: driverView(driver) }, 200, {
-      "Set-Cookie": `taxote_driver_session=${token}; Path=/; Secure; SameSite=Lax; HttpOnly; Max-Age=${SESSION_DAYS * 86400}`,
+      "Set-Cookie": `taxote_driver_session=${token}; Path=/; Secure; SameSite=Lax; HttpOnly`,
       ...headers
     });
   }
 
-  if ((path === "/api/driver/status" || path === "/api/driver/me") && method === "GET") {
+  if (path === "/api/driver/status" && method === "GET") {
     const driver = await driverSession(request, db);
     if (!driver) throw new HttpError(401, "Sesión expirada.");
     return json({ ok: true, driver: driverView(driver) }, 200, headers);
   }
 
-  // Driver Actions
-  if (path === "/api/driver/location" && method === "POST") {
-    const driver = await driverSession(request, db); if (!driver) throw new HttpError(401, "Sesión expirada.");
-    const body = await bodyJson(request), lat = safeNumber(body.lat, "Lat"), lon = safeNumber(body.lon, "Lon"), stamp = nowIso();
-    await db.prepare("UPDATE drivers SET current_lat=?, current_lon=?, current_bearing=?, last_seen_at=?, is_online=1, updated_at=? WHERE id=?").bind(lat, lon, Number(body.bearing || 0), stamp, stamp, driver.id).run();
-    return json({ ok: true }, 200, headers);
-  }
-
-  if (path === "/api/driver/work" && method === "GET") {
-    const driver = await driverSession(request, db); if (!driver) throw new HttpError(401, "Sesión expirada.");
-    const active = await db.prepare("SELECT * FROM rides WHERE driver_id=? AND status NOT IN ('completed','cancelled') LIMIT 1").bind(driver.id).first();
-    const { results: offers } = await db.prepare("SELECT * FROM rides WHERE status='pending' AND (driver_id IS NULL OR driver_id=?) LIMIT 5").bind(driver.id).all();
-    return json({
-      activeRide: active ? await driverRideView(db, active) : null,
-      offers: await Promise.all(offers.map(o => driverRideView(db, o)))
-    }, 200, headers);
-  }
-
-  // Admin Endpoints
-  if (path === "/api/admin/drivers" && method === "GET") {
-    const { results } = await db.prepare("SELECT * FROM drivers ORDER BY created_at DESC").all();
-    return json(results.map(driverView), 200, headers);
-  }
-
-  if (path === "/api/admin/connected-drivers" || path === "/api/admin/driver-locations") {
+  if (path === "/api/admin/driver-locations" && method === "GET") {
     const threshold = new Date(Date.now() - 5 * 60000).toISOString();
-    const { results } = await db.prepare(`
-      SELECT d.*,
-        (SELECT status FROM rides WHERE driver_id=d.id AND status IN ('accepted', 'driver_arriving', 'arrived', 'in_progress') LIMIT 1) as active_ride_status
-      FROM drivers d
-      WHERE d.status='active' AND d.is_online=1 AND d.last_seen_at > ?
-    `).bind(threshold).all();
-
+    const { results } = await db.prepare("SELECT * FROM drivers WHERE status='active' AND is_online=1 AND last_seen_at > ?").bind(threshold).all();
     return json(results.map(r => ({
-      id: r.public_id,
-      name: `${r.first_name} ${r.last_name}`.trim(),
-      phone: r.phone,
+      id: r.public_id, name: `${r.first_name} ${r.last_name}`.trim(), phone: r.phone,
       location: { lat: Number(r.current_lat), lon: Number(r.current_lon), bearing: Number(r.current_bearing || 0) },
-      connectionState: r.active_ride_status ? 'busy' : 'available',
-      activeRideStatus: r.active_ride_status,
-      vehicleBrand: r.vehicle_brand,
-      vehicleModel: r.vehicle_model,
-      vehicleColor: r.vehicle_color,
-      vehiclePlate: r.vehicle_plate
+      vehiclePlate: r.vehicle_plate, vehicleBrand: r.vehicle_brand, vehicleModel: r.vehicle_model, vehicleColor: r.vehicle_color
     })), 200, headers);
   }
 
   if (path === "/api/dispatch/rides" && method === "GET") {
     const { results } = await db.prepare("SELECT r.*, d.first_name, d.last_name FROM rides r LEFT JOIN drivers d ON d.id=r.driver_id WHERE r.status NOT IN ('completed','cancelled') ORDER BY r.created_at DESC").all();
-    return json(results.map(r => ({ ...dispatchRideView(r), pickupLat: r.pickup_lat, pickupLon: r.pickup_lon, destinationLat: r.destination_lat, destinationLon: r.destination_lon })), 200, headers);
-  }
-
-  if (path.startsWith("/api/contacts/lookup") && method === "GET") {
-      const qPhone = phone(url.searchParams.get("phone"));
-      const profile = await db.prepare("SELECT * FROM profiles WHERE phone=?").bind(qPhone).first();
-      if (!profile) return json({ found: false }, 200, headers);
-      const { results: rides } = await db.prepare("SELECT * FROM rides WHERE profile_id=? ORDER BY created_at DESC LIMIT 10").bind(profile.id).all();
-      return json({ found: true, profile: profileView(profile), rides: await Promise.all(rides.map(r => driverRideView(db, r))) }, 200, headers);
-  }
-
-  if (path === "/api/dispatch/clients" && method === "GET") {
-      const { results } = await db.prepare("SELECT * FROM profiles WHERE kind='registered'").all();
-      return json(results.map(profileView), 200, headers);
-  }
-
-  if (path === "/api/admin/internal-chat") {
-    if (method === "GET") {
-      const { results } = await db.prepare("SELECT * FROM internal_chat_messages ORDER BY created_at ASC").all();
-      return json({ messages: results }, 200, headers);
-    }
-    const body = await bodyJson(request);
-    await db.prepare("INSERT INTO internal_chat_messages(conversation_id, sender, message, created_at) VALUES(?,?,?,?)").bind("admin", "admin", clean(body.message), nowIso()).run();
-    return json({ ok: true }, 200, headers);
-  }
-
-  if (path === "/api/admin/chats" && method === "GET") {
-    const { results } = await db.prepare("SELECT * FROM admin_notifications WHERE kind='whatsapp' AND read_at IS NULL").all();
-    return json({ unreadCount: results.length, notifications: results }, 200, headers);
-  }
-  if (path === "/api/admin/notifications" && method === "GET") {
-    const { results } = await db.prepare("SELECT * FROM admin_notifications WHERE read_at IS NULL ORDER BY created_at DESC LIMIT 50").all();
-    return json({ unreadCount: results.length, notifications: results }, 200, headers);
-  }
-
-  if (path === "/api/rides/estimate" && method === "POST") {
-    const body = await bodyJson(request);
-    const dist = 5.2; // Default for now or calculated if possible
-    const duration = 15;
-    const price = 250;
-    return json({ estimate: { distanceKm: dist, durationMin: duration, priceDop: price } }, 200, headers);
+    return json(results.map(r => ({
+      id: r.public_id, passenger: r.passenger_name, phone: r.passenger_phone, pickup: r.pickup_address, destination: r.destination_address,
+      driver: r.first_name ? `${r.first_name} ${r.last_name}` : "—", status: r.status, priceDop: Number(r.price_dop), createdAt: r.created_at,
+      pickupLat: r.pickup_lat, pickupLon: r.pickup_lon, destinationLat: r.destination_lat, destinationLon: r.destination_lon
+    })), 200, headers);
   }
 
   if (path === "/api/rides" && method === "POST") {
-    const body = await bodyJson(request);
-    const rid = id("RID"), stamp = nowIso();
-    const p = phone(body.phone), n = clean(body.name);
-
-    // Check if profile exists or create guest
+    const body = await bodyJson(request), rid = id("RID"), stamp = nowIso(), p = phone(body.phone), n = clean(body.name);
     let profile = await db.prepare("SELECT id FROM profiles WHERE phone=?").bind(p).first();
     if (!profile) {
-      const pid = id("USR");
-      const { lastRowId } = await db.prepare("INSERT INTO profiles(public_id,kind,name,phone,created_at,updated_at) VALUES(?,?,?,?,?,?)").bind(pid, "guest", n, p, stamp, stamp).run();
+      const { lastRowId } = await db.prepare("INSERT INTO profiles(public_id,kind,name,phone,created_at,updated_at) VALUES(?,'guest',?,?,?,?)").bind(id("USR"), n, p, stamp, stamp).run();
       profile = { id: lastRowId };
     }
-
-    // Assign driver if provided
-    let driverRow = null;
-    if (body.driverId) {
-      driverRow = await db.prepare("SELECT id FROM drivers WHERE public_id=?").bind(body.driverId).first();
-    }
-
-    const { lastRowId: rideId } = await db.prepare(`
-      INSERT INTO rides(public_id,profile_id,passenger_type,passenger_name,passenger_phone,pickup_address,pickup_lat,pickup_lon,destination_address,destination_lat,destination_lon,status,driver_id,note,payment_method,passenger_count,scheduled_at,price_dop,distance_km,duration_min,created_at)
-      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-    `).bind(
-      rid, profile.id, "guest", n, p,
-      clean(body.pickup.address), Number(body.pickup.lat), Number(body.pickup.lon),
-      clean(body.destination.address), Number(body.destination.lat), Number(body.destination.lon),
-      driverRow ? "accepted" : "pending", driverRow?.id || null,
-      clean(body.note), clean(body.paymentMethod), Number(body.passengerCount || 1),
-      body.scheduledAt || null, 250, 5.2, 15, stamp
-    ).run();
-
-    if (body.stops && Array.isArray(body.stops)) {
-      for (let i = 0; i < body.stops.length; i++) {
-        const s = body.stops[i];
-        await db.prepare("INSERT INTO ride_stops(ride_id,position,address,lat,lon) VALUES(?,?,?,?,?)").bind(rideId, i, clean(s.address), Number(s.lat), Number(s.lon)).run();
-      }
-    }
-
-    const ride = await db.prepare("SELECT * FROM rides WHERE id=?").bind(rideId).first();
-    return json({ ok: true, ride: await driverRideView(db, ride) }, 201, headers);
+    const driverRow = body.driverId ? await db.prepare("SELECT id FROM drivers WHERE public_id=?").bind(body.driverId).first() : null;
+    await db.prepare(`INSERT INTO rides(public_id,profile_id,passenger_name,passenger_phone,pickup_address,pickup_lat,pickup_lon,destination_address,destination_lat,destination_lon,status,driver_id,note,price_dop,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+      .bind(rid, profile.id, n, p, clean(body.pickup.address), Number(body.pickup.lat), Number(body.pickup.lon), clean(body.destination.address), Number(body.destination.lat), Number(body.destination.lon), driverRow ? "accepted" : "pending", driverRow?.id || null, clean(body.note), 250, stamp).run();
+    return json({ ok: true, ride: { id: rid } }, 201, headers);
   }
 
   if (path === "/api/route") {
       const coords = url.searchParams.get("coordinates");
       const resp = await fetch(`https://router.project-osrm.org/route/v1/driving/${coords}?overview=full&geometries=geojson`);
-      const body = await resp.json();
-      return json(body, 200, headers);
+      return json(await resp.json(), 200, headers);
   }
 
-  throw new HttpError(404, "Recurso no encontrado");
-}
+  if (path === "/api/geocode") {
+      const q = url.searchParams.get("q");
+      const { results } = await db.prepare("SELECT * FROM addresses WHERE name LIKE ? LIMIT 5").bind(`%${q}%`).all();
+      return json(results.map(r => ({ display_name: r.name, lat: r.lat, lon: r.lon })), 200, headers);
+  }
 
-async function driverRideView(db, r) {
-  const { results: stops } = await db.prepare("SELECT * FROM ride_stops WHERE ride_id=? ORDER BY position").bind(r.id).all();
-  return {
-    id: r.public_id,
-    passenger: r.passenger_name,
-    phone: r.passenger_phone,
-    pickup: r.pickup_address,
-    pickupLat: Number(r.pickup_lat),
-    pickupLon: Number(r.pickup_lon),
-    destination: r.destination_address,
-    destinationLat: Number(r.destination_lat),
-    destinationLon: Number(r.destination_lon),
-    status: r.status,
-    priceDop: Number(r.price_dop),
-    stops: stops || [],
-    note: r.note,
-    createdAt: r.created_at
-  };
-}
+  if (path === "/api/reverse") {
+      const lat = Number(url.searchParams.get("lat")), lon = Number(url.searchParams.get("lon"));
+      const r = await db.prepare("SELECT * FROM addresses ORDER BY ((lat-?)*(lat-?)+(lon-?)*(lon-?)) LIMIT 1").bind(lat, lat, lon, lon).first();
+      return r ? json({ display_name: r.name, lat: r.lat, lon: r.lon }) : json({ error: "Not found" }, 404);
+  }
 
-function dispatchRideView(r) {
-    return {
-      id: r.public_id,
-      passenger: r.passenger_name,
-      phone: r.passenger_phone,
-      pickup: r.pickup_address,
-      destination: r.destination_address,
-      driver: r.first_name ? `${r.first_name} ${r.last_name}` : "—",
-      status: r.status,
-      priceDop: Number(r.price_dop),
-      createdAt: r.created_at,
-      contactedAt: r.contacted_at,
-      contactedBy: r.contacted_by
-    };
-}
-
-function profileView(p) {
-  return { id: p.public_id, name: p.name, phone: p.phone, email: p.email, kind: p.kind, createdAt: p.created_at };
+  throw new HttpError(404, "Not found");
 }
