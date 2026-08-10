@@ -580,3 +580,46 @@ body.panel-resize-active, body.panel-resize-active * { cursor: ew-resize !import
 .trip-detail-grid span { color:#4d6778; font-size:10px; overflow-wrap:anywhere; }
 .panel-resize-handle:after { content:"↔"; position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); display:grid; place-items:center; width:22px; height:22px; border:1px solid #c7d3da; border-radius:50%; color:#0b2e47; background:#fff; box-shadow:0 2px 7px rgba(0,0,0,.15); font-size:11px; font-weight:900; }
 .panel-resize-handle:hover:after,.panel-resize-handle.active:after { color:#0b2e47; background:#f4c400; }
+
+
+/* TAXOTE V2.2: toda la barra vertical es el agarrador lateral. */
+.panel-resize-handle{
+  width:16px !important;
+  cursor:ew-resize !important;
+  background:transparent;
+}
+.booking-resize-handle{
+  left:auto !important;
+  right:-8px !important;
+}
+.drivers-resize-handle{
+  left:-8px !important;
+  right:auto !important;
+}
+.panel-resize-handle::before{
+  content:"" !important;
+  position:absolute !important;
+  top:0 !important;
+  bottom:0 !important;
+  left:7px !important;
+  width:2px !important;
+  height:auto !important;
+  transform:none !important;
+  border-radius:0 !important;
+  background:#d5dde2 !important;
+  box-shadow:none !important;
+  opacity:1 !important;
+}
+.panel-resize-handle:hover::before,
+.panel-resize-handle:focus-visible::before,
+.panel-resize-handle.active::before{
+  top:0 !important;
+  bottom:0 !important;
+  height:auto !important;
+  background:#f4c400 !important;
+  opacity:1 !important;
+}
+.panel-resize-handle::after{
+  display:none !important;
+  content:none !important;
+}

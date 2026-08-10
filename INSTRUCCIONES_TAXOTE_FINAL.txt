@@ -1,0 +1,40 @@
+TAXOTE - PRODUCCIÓN COMPLETA
+Fecha de preparación: 2026-08-10
+
+ESTRUCTURA DE DESPLIEGUE
+- wrangler.jsonc
+- paginawebTaxone/ (sitio completo)
+- Worker real: paginawebTaxone/_worker.js
+- D1 binding: taxote_db
+- Assets binding: ASSETS
+
+CORRECCIONES PRINCIPALES
+1. Sesión administrativa persistente en D1 usando:
+   admin_sessions(token_hash, username, expires_at, created_at)
+2. Logout real mediante /api/admin/logout; no intenta borrar una cookie HttpOnly desde JavaScript.
+3. Autenticación de usuarios registrados e invitados.
+4. Creación, estimación, consulta y cancelación de viajes.
+5. Historial de viajes y clientes para la Central.
+6. CRUD administrativo básico de conductores, puntos y depósitos.
+7. Chat público, privado y por viaje.
+8. Historial combinado de conversaciones.
+9. Reportes.
+10. Geocodificación/reversa local sobre la tabla addresses y rutas mediante OSRM.
+11. Endpoints usados por TAXOTE Driver incluidos (login, estado, ubicación, trabajo, viajes, chat, puntos, billetera, historial y reportes).
+
+NO SE BORRAN TABLAS NI DATOS D1.
+El Worker utiliza CREATE TABLE IF NOT EXISTS y migraciones ADD COLUMN tolerantes a columnas ya existentes.
+
+ANTES DE SUBIR
+Extrae el contenido sobre D:\Taxote y reemplaza los archivos cuando Windows lo pida.
+
+VERIFICACIÓN:
+Select-String -Path .\paginawebTaxone\_worker.js -Pattern "admin_sessions\(token_hash,username,expires_at,created_at\)"
+node --check .\paginawebTaxone\_worker.js
+
+SUBIR:
+git add wrangler.jsonc paginawebTaxone
+git commit -m "TAXOTE produccion completa"
+git push origin main
+
+Después espera que Cloudflare muestre "Success: Deploy command completed".

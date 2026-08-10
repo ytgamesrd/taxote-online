@@ -1,0 +1,41 @@
+TAXOTE PRODUCCIÓN COMPLETA CORREGIDA V2
+Fecha: 2026-08-10
+
+CAMBIOS INCLUIDOS
+- Cierre de sesión real y completo con invalidación de admin_sessions.
+- Redirección canónica www.taxote.online -> taxote.online.
+- Cualquier página/ruta administrativa exige iniciar sesión.
+- Notificaciones de la Central con badge, sonido y notificación del navegador.
+- Depósitos mostrados en lista/tabla con comprobante y aprobación.
+- Puntos A, B y paradas C movibles arrastrando el marcador.
+- El punto queda EXACTAMENTE donde se coloca; la dirección no mueve las coordenadas.
+- X para eliminar A/B y X en los marcadores/paradas.
+- Botón Limpiar funcional.
+- Programar viaje muestra fecha/hora y el viaje no se ofrece al conductor antes de la hora programada.
+- Lupas de dirección pueden mostrar direcciones recientes del cliente seleccionado.
+- Conductores: hacer clic selecciona al conductor para recibir la oferta, no centra el mapa.
+- Si el conductor rechaza una oferta, el Worker busca automáticamente otro conductor disponible y cercano.
+- Centrar mapa: encuadra A/B/C actuales; si no hay ruta vuelve a Santo Domingo/Pedro Brand.
+- Paneles izquierdo/derecho redimensionables lateralmente con control ↔.
+- Tabla de viajes con botones ◀ ▶ para desplazamiento horizontal.
+- Ojo de viaje muestra detalles; VER FORMULARIO vuelve a Agregar reservas.
+- Se eliminó el DIV duplicado del mapa.
+- Mantiene Cloudflare Worker + D1 taxote-db. No agrega Firebase a la web.
+- No borra las tablas ni los datos existentes de D1.
+
+INSTALACIÓN
+1. Extrae este ZIP directamente dentro de D:\Taxote
+2. Acepta reemplazar archivos.
+3. En PowerShell:
+   node --check .\paginawebTaxone\_worker.js
+   node --check .\paginawebTaxone\js\app.js
+   git add wrangler.jsonc paginawebTaxone
+   git commit -m "TAXOTE correccion completa V2"
+   git push origin main
+4. Espera a que Cloudflare indique Success.
+
+IMPORTANTE
+Cloudflare usa:
+main = paginawebTaxone/_worker.js
+D1 binding = taxote_db
+Assets binding = ASSETS

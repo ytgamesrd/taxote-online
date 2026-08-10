@@ -1,0 +1,62 @@
+RUTAS PRINCIPALES INCLUIDAS
+
+ADMIN:
+POST /api/admin/login
+POST /api/admin/logout
+GET/POST /api/admin/notifications...
+GET/PATCH/DELETE /api/admin/drivers...
+POST /api/admin/drivers/points
+GET /api/admin/deposits
+GET /api/admin/driver-locations
+GET/POST /api/admin/chats/public
+GET/POST /api/admin/chats/:driver/messages
+POST /api/admin/chats/:driver/read
+GET/DELETE /api/admin/conversation-history
+GET /api/admin/conversation-history/messages
+GET/PATCH /api/admin/reports...
+
+USUARIO:
+POST /api/auth/register
+POST /api/auth/login
+GET /api/auth/me
+POST /api/auth/logout
+GET /api/contacts/lookup
+POST /api/guest/profile
+POST /api/rides/estimate
+POST /api/rides
+GET /api/rides/mine
+POST /api/rides/:id/cancel
+GET/POST /api/user/rides/:id/chat
+GET /api/user/chat/unread
+
+CENTRAL:
+GET /api/dispatch/clients
+GET /api/dispatch/rides
+GET /api/dispatch/rides/history
+
+DRIVER:
+POST /api/driver/register
+POST /api/driver/login
+GET /api/driver/me
+GET /api/driver/status
+POST /api/driver/location
+POST /api/driver/fcm-token
+GET /api/driver/work
+POST /api/driver/rides/:id/accept|reject|release|cancel|status
+GET/POST /api/driver/rides/:id/chat
+GET/POST /api/driver/chat/private
+GET/POST /api/driver/chat/public
+GET /api/driver/chat/unread
+POST /api/driver/points/deposit
+GET /api/driver/wallet
+GET /api/driver/history
+POST /api/driver/reports
+POST /api/driver/profile
+POST /api/driver/disconnect
+POST /api/driver/logout
+
+MAPA:
+GET /api/geocode
+GET /api/place
+GET /api/reverse
+GET /api/route
