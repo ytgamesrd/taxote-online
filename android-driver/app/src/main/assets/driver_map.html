@@ -42,16 +42,32 @@
         max-height: 85vh;
     }
     #tripPanel.expanded{transform:translateY(0) !important;}
-    #tripPanel.active-mode:not(.expanded){transform:translateY(calc(100% - 126px)) !important;}
+    #tripPanel.active-mode:not(.expanded){transform:translateY(calc(100% - 132px)) !important;}
 
     #tripHandle{width:64px;height:7px;background:#c8ced5;border-radius:5px;margin:0 auto 15px auto;cursor:grab;touch-action:none;flex:0 0 auto;}
-    #tripContent{display:flex;flex-direction:column;width:100%;gap:15px;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
-    #tripOfferControls{display:none;width:100%;flex-direction:column;gap:15px}
-    #offerButtons{display:flex;width:100%;justify-content:space-between;gap:12px}
-    #tripActiveControls{display:none;width:100%;flex-direction:column;gap:14px}
-    .active-summary{display:flex;width:100%;align-items:center;justify-content:space-between;gap:12px}
-    #activeRouteList{display:none;flex-direction:column;gap:12px;padding:4px 2px 10px;border-top:1px solid #e7ebef}
-    #tripPanel.active-mode.expanded #activeRouteList{display:flex}
+    #tripContent{display:flex;flex-direction:column;width:100%;gap:15px;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;padding-bottom:10px;}
+
+    #tripOfferControls, #tripActiveControls { display:none; width:100%; flex-direction:column; gap:12px; }
+
+    .route-details-box { display: flex; flex-direction: column; gap: 12px; padding: 15px; background: #f8f9fa; border-radius: 14px; border: 1px solid #e9ecef; }
+    .client-header { display: flex; align-items: center; gap: 10px; margin-bottom: 5px; }
+    .client-avatar { width: 36px; height: 36px; background: #0b2e47; color: #fff; border-radius: 50%; display: grid; place-items: center; font-weight: 800; font-size: 14px; }
+    .client-name { font: 800 18px Arial; color: #000; }
+
+    .location-list { display: flex; flex-direction: column; gap: 8px; position: relative; padding-left: 20px; }
+    .location-list::before { content: ''; position: absolute; left: 4px; top: 8px; bottom: 8px; width: 2px; background: #dee2e6; }
+    .location-entry { position: relative; font-size: 14px; color: #444; }
+    .location-entry::after { content: ''; position: absolute; left: -20px; top: 5px; width: 10px; height: 10px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+    .entry-a::after { background: #000; }
+    .entry-b::after { background: #1e88e5; }
+    .entry-c::after { background: #ffc107; }
+    .location-label { font-weight: 800; color: #888; font-size: 10px; text-transform: uppercase; margin-right: 5px; }
+
+    .price-row { display: flex; justify-content: space-between; align-items: center; border-top: 1px solid #e9ecef; padding-top: 10px; margin-top: 5px; }
+    .price-val { font: 800 24px Arial; color: #2e7d32; }
+    .time-val { font: 700 14px Arial; color: #666; }
+
+    .note-row { background: #fff8e1; border-left: 4px solid #ffc107; padding: 10px; border-radius: 4px; font-size: 13px; font-style: italic; color: #555; }
 
     .offer-summary { display: flex; justify-content: space-between; align-items: flex-end; }
     .offer-price { font: 800 28px Arial; color: #064b44; }
@@ -131,6 +147,15 @@
   <div id="tripPanel">
     <div id="tripHandle"></div>
     <div id="tripContent">
+      <!-- BOTÓN PRINCIPAL SIEMPRE VISIBLE EN ACTIVE MODE -->
+      <div id="tripActiveHeader" style="display:none; align-items:center; justify-content:space-between; gap:12px; margin-bottom:10px;">
+          <div id="tripInfo">
+              <div id="tripTime">--<span>min</span></div>
+              <div id="tripStats">-- km • --:--</div>
+          </div>
+          <div id="tripActionButton" class="btn btn-black" style="min-width:140px" onclick="TaxoteAPI.onAction('primary')">LLEGUÉ</div>
+      </div>
+
       <div id="tripOfferControls">
           <div class="offer-summary">
               <div class="offer-price" id="offerPrice">RD$ --</div>
@@ -140,19 +165,22 @@
               <div class="btn btn-red" onclick="TaxoteAPI.onAction('reject')">RECHAZAR</div>
               <div class="btn btn-green" onclick="TaxoteAPI.onAction('primary')">ACEPTAR</div>
           </div>
-          <div class="offer-route" id="offerRouteList"></div>
-          <div id="offerExtraDetails"></div>
       </div>
-      <div id="tripActiveControls">
-          <div class="active-summary">
-            <div id="tripInfo">
-                <div id="tripTime">--<span>min</span></div>
-                <div id="tripStats">-- km • --:--</div>
-            </div>
-            <div id="tripActionButton" class="btn btn-black" style="min-width:140px" onclick="TaxoteAPI.onAction('primary')">LLEGUÉ</div>
+
+      <!-- DETALLES EXPANDIBLES (CLIENTE, A, B, C, NOTA, PRECIO) -->
+      <div id="tripDetails" class="route-details-box" style="display:none;">
+          <div class="client-header">
+              <div class="client-avatar" id="clientAvatar">?</div>
+              <div class="client-name" id="clientName">Pasajero</div>
           </div>
-          <div class="offer-route" id="activeRouteList"></div>
-          <div id="activeExtraDetails"></div>
+          <div class="location-list" id="routeWaypointsList">
+              <!-- Se llena dinámicamente -->
+          </div>
+          <div class="note-row" id="tripNoteBox" style="display:none;"></div>
+          <div class="price-row">
+              <div class="price-val" id="detailPrice">RD$ --</div>
+              <div class="time-val" id="detailTime">--:-- · --/--</div>
+          </div>
       </div>
     </div>
   </div>
@@ -256,21 +284,45 @@
       document.getElementById('tripPanel').style.transform='translateY(110%)';
     };
 
-    window.showTaxoteRoute=function(pickup,stops,destination,route,activeIdx,actionLabel,price,totalMin,totalKm,passengerCount,paymentMethod,note){
+    window.showTaxoteRoute=function(pickup,stops,destination,route,activeIdx,actionLabel,price,totalMin,totalKm,passengerCount,paymentMethod,note,clientName,scheduledAt){
       window.clearTaxoteRoute();
       isShowingOffer = activeIdx < 0;
       if(isShowingOffer) document.body.classList.add('offer-active');
       else document.body.classList.add('active-mode-layout');
 
       document.getElementById('tripOfferControls').style.display=isShowingOffer?'flex':'none';
-      document.getElementById('tripActiveControls').style.display=isShowingOffer?'none':'flex';
-      document.getElementById('tripActionButton').textContent=actionLabel||'LLEGUÉ';
+      document.getElementById('tripActiveHeader').style.display=isShowingOffer?'none':'flex';
+      document.getElementById('tripDetails').style.display='flex';
 
       const safeStops = Array.isArray(stops)?stops:[];
       currentWaypoints = [{lat:pickup.lat, lon:pickup.lon, label:'A', type:'a', addr:pickup.address},
           ...safeStops.map((s,i)=>({lat:s.lat, lon:s.lon, label:safeStops.length>1?'C'+(i+1):'C', type:'c', addr:s.address})),
           {lat:destination.lat, lon:destination.lon, label:'B', type:'b', addr:destination.address}];
       nextWaypointIndex = activeIdx;
+
+      // LLENAR DETALLES
+      document.getElementById('clientName').textContent = clientName || 'Pasajero';
+      document.getElementById('clientAvatar').textContent = (clientName || 'P').charAt(0).toUpperCase();
+      document.getElementById('detailPrice').textContent = 'RD$ ' + price;
+      document.getElementById('offerPrice').textContent = 'RD$ ' + price;
+      document.getElementById('offerMeta').textContent = totalMin + ' min · ' + totalKm + ' km';
+
+      const date = scheduledAt ? new Date(scheduledAt) : new Date();
+      document.getElementById('detailTime').textContent = date.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) + ' · ' + date.toLocaleDateString([], {day:'2-digit', month:'2-digit'});
+
+      if(note) {
+          document.getElementById('tripNoteBox').textContent = note;
+          document.getElementById('tripNoteBox').style.display = 'block';
+      } else {
+          document.getElementById('tripNoteBox').style.display = 'none';
+      }
+
+      const waypointHtml = currentWaypoints.map(w => `
+          <div class="location-entry entry-${w.type}">
+              <span class="location-label">Punto ${w.label}</span> ${w.addr}
+          </div>
+      `).join('');
+      document.getElementById('routeWaypointsList').innerHTML = waypointHtml;
 
       currentWaypoints.forEach((p,i)=>{
           if(!Number.isFinite(p.lat) || !Number.isFinite(p.lon)) return;
@@ -282,22 +334,8 @@
           routeLayers.push(m);
       });
 
-      activeRoutePoints = route || [];
-      if(activeRoutePoints.length>0) {
-          const poly = L.polyline(activeRoutePoints,{color:'#1e88e5',weight:8,opacity:0.8, lineJoin: 'round'}).addTo(map);
-          routeLayers.push(poly);
-      }
-
-      let extra = `<div class="trip-detail-box"><span class="detail-pill">${passengerCount} Pasajeros</span><span class="detail-pill" style="background:#2e7d32">${paymentMethod}</span></div>`;
-      if(note) extra += `<div class="note-box"><b>Nota:</b> ${note}</div>`;
-
       if(isShowingOffer){
-          document.getElementById('offerPrice').textContent='RD$ '+price;
-          document.getElementById('offerMeta').textContent=totalMin+' min · '+totalKm+' km';
-          document.getElementById('offerExtraDetails').innerHTML=extra;
           document.getElementById('tripPanel').style.transform='translateY(calc(100% - 175px))';
-
-          // MEJOR ZOOM PARA OFERTAS
           const validPoints = currentWaypoints.filter(w => Number.isFinite(w.lat) && Number.isFinite(w.lon));
           if(validPoints.length > 0) {
               const bounds = L.latLngBounds(validPoints.map(w => [w.lat, w.lon]));
@@ -305,18 +343,19 @@
           }
       } else {
           document.getElementById('tripPanel').classList.add('active-mode');
-          document.getElementById('activeExtraDetails').innerHTML=extra;
-
+          document.getElementById('tripActionButton').textContent=actionLabel||'LLEGUÉ';
           isGPSLock = true;
-          if(lastPos) {
-              window.updateDriverLocation(lastPos[0], lastPos[1], currentBearing, "busy", true);
-          } else {
-              // Si no hay posición, mostramos toda la ruta inicial
+          if(lastPos) window.updateDriverLocation(lastPos[0], lastPos[1], currentBearing, "busy", true);
+          else {
               const validPoints = currentWaypoints.filter(w => Number.isFinite(w.lat) && Number.isFinite(w.lon));
-              if(validPoints.length > 0) {
-                  map.fitBounds(L.latLngBounds(validPoints.map(w => [w.lat, w.lon])), {padding:[80, 80], maxZoom:16});
-              }
+              if(validPoints.length > 0) map.fitBounds(L.latLngBounds(validPoints.map(w => [w.lat, w.lon])), {padding:[80, 80], maxZoom:16});
           }
+      }
+
+      if(route && route.length > 0) {
+          activeRoutePoints = route;
+          const poly = L.polyline(activeRoutePoints,{color:'#1e88e5',weight:8,opacity:0.8, lineJoin:'round'}).addTo(map);
+          routeLayers.push(poly);
       }
     };
 
@@ -325,6 +364,12 @@
             if (l instanceof L.Polyline) { map.removeLayer(l); return false; }
             return true;
         });
+        if(points && points.length > 0) {
+            activeRoutePoints = points;
+            const poly = L.polyline(activeRoutePoints,{color:'#1e88e5',weight:8,opacity:0.8, lineJoin:'round'}).addTo(map);
+            routeLayers.push(poly);
+        }
+    };
         if(points && points.length > 0) {
             activeRoutePoints = points;
             const poly = L.polyline(activeRoutePoints,{color:'#1e88e5',weight:8,opacity:0.8, lineJoin:'round'}).addTo(map);

@@ -133,19 +133,19 @@ public class MapManager {
         String status = ride.optString("status", "pending");
 
         // Add current location if active
-        Double currentLat = null;
-        Double currentLon = null;
+        Double latVal = null;
+        Double lonVal = null;
         if (preferences != null) {
             double lat = Double.longBitsToDouble(preferences.getLong("last_lat_bits", Double.doubleToRawLongBits(Double.NaN)));
             double lon = Double.longBitsToDouble(preferences.getLong("last_lon_bits", Double.doubleToRawLongBits(Double.NaN)));
             if (Double.isFinite(lat) && Double.isFinite(lon)) {
-                currentLat = lat;
-                currentLon = lon;
+                latVal = lat;
+                lonVal = lon;
             }
         }
 
         if (isOffer) {
-            // Show all points: Pickup -> Stops -> Destination
+            // Offer mode: Show the WHOLE path A -> C -> B
             coordinates.append(pickup.optDouble("lon")).append(',').append(pickup.optDouble("lat"));
             if (stops != null) {
                 for (int i = 0; i < stops.length(); i++) {
@@ -155,39 +155,29 @@ public class MapManager {
             }
             coordinates.append(';').append(destination.optDouble("lon")).append(',').append(destination.optDouble("lat"));
         } else {
-            // Active trip guidance: Current Location -> ALL remaining points
-            if (currentLat != null && currentLon != null) {
-                coordinates.append(currentLon).append(',').append(currentLat).append(';');
+            // Navigation mode: From current location to NEXT point only
+            if (latVal != null && lonVal != null) {
+                coordinates.append(lonVal).append(',').append(latVal).append(';');
             }
 
-            if ("accepted".equals(status) || "driver_arriving".equals(status)) {
-                // Guide to Pickup first, then stops, then B
+            int guideIndex = resolveGuideWaypointIndex(ride);
+            if (guideIndex == 0) {
+                // Guide only to Pickup (A)
                 coordinates.append(pickup.optDouble("lon")).append(',').append(pickup.optDouble("lat"));
-                if (stops != null) {
-                    for (int i = 0; i < stops.length(); i++) {
-                        JSONObject stop = stops.optJSONObject(i);
-                        if (stop != null) coordinates.append(';').append(stop.optDouble("lon")).append(',').append(stop.optDouble("lat"));
-                    }
-                }
-                coordinates.append(';').append(destination.optDouble("lon")).append(',').append(destination.optDouble("lat"));
+            } else if (stops != null && guideIndex <= stops.length()) {
+                // Guide to current stop (C)
+                JSONObject targetStop = stops.optJSONObject(guideIndex - 1);
+                if (targetStop != null) coordinates.append(targetStop.optDouble("lon")).append(',').append(targetStop.optDouble("lat"));
             } else {
-                // Trip Started (in_progress or arrived): Current location -> Stops -> Destination
-                if (stops != null) {
-                    for (int i = 0; i < stops.length(); i++) {
-                        JSONObject stop = stops.optJSONObject(i);
-                        if (stop != null) {
-                            coordinates.append(stop.optDouble("lon")).append(',').append(stop.optDouble("lat")).append(';');
-                        }
-                    }
-                }
+                // Guide to Destination (B)
                 coordinates.append(destination.optDouble("lon")).append(',').append(destination.optDouble("lat"));
             }
         }
 
         String encodedCoordinates = Uri.encode(coordinates.toString());
         
-        final Double finalLat = currentLat;
-        final Double finalLon = currentLon;
+        final Double finalLat = latVal;
+        final Double finalLon = lonVal;
 
         // DATOS PARA RENDER INICIAL (MARCADORES A, B, C AL INSTANTE)
         String actionLabel = "LLEGUÉ";
@@ -200,13 +190,19 @@ public class MapManager {
         String note = ride.optString("note", "");
         String payment = ride.optString("paymentMethod", "Efectivo");
         int passengers = ride.optInt("passengerCount", 1);
+        String passengerName = ride.optString("passengerName", "Pasajero");
+        String scheduledAt = ride.optString("createdAt", ""); 
+        if (ride.has("scheduledAt") && !ride.isNull("scheduledAt")) {
+            scheduledAt = ride.optString("scheduledAt");
+        }
 
         final String initialScript = String.format(Locale.US, 
-            "window.showTaxoteRoute(%s, %s, %s, [], %d, '%s', %d, %d, %.1f, %d, '%s', '%s');",
+            "window.showTaxoteRoute(%s, %s, %s, [], %d, '%s', %d, %d, %.1f, %d, '%s', '%s', '%s', '%s');",
             pickup.toString(), (stops == null ? "[]" : stops.toString()), 
             destination.toString(), guideIndex, actionLabel,
             ride.optInt("priceDop"), ride.optInt("durationMin"), ride.optDouble("distanceKm"),
-            passengers, payment, note.replace("'", "\\'"));
+            passengers, payment, note.replace("'", "\\'"),
+            passengerName.replace("'", "\\'"), scheduledAt);
         
         webView.post(() -> webView.evaluateJavascript(initialScript, null));
 

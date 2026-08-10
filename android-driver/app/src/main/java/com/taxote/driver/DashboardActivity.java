@@ -360,10 +360,10 @@ public class DashboardActivity extends Activity {
             if (!response.isSuccessful()) return;
             JSONObject activeRide = response.body.optJSONObject("activeRide");
             JSONArray offers = response.body.optJSONArray("offers");
-            if (activeRide == null && wasRideActive) {
-                playCancelSound();
-                showMessage("Servicio cancelado", "El servicio fue cancelado por la Central.");
-            }
+            
+            // Si el viaje activo desaparece, no mostramos error de cancelación genérico
+            // ya que pudo haber terminado con éxito. La confirmación de éxito la da handleRideResponse.
+            
             wasRideActive = activeRide != null;
             if (activeRide != null) showRide(activeRide, false);
             else if (offers != null && offers.length() > 0) showRide(offers.optJSONObject(0), true);
@@ -552,6 +552,19 @@ public class DashboardActivity extends Activity {
         }
         JSONObject ride = response.body.optJSONObject("ride");
         if (completed) {
+            String name = ride != null ? ride.optString("passengerName", "Pasajero") : "Cliente";
+            int price = ride != null ? ride.optInt("priceDop", 0) : 0;
+            String earnings = "RD$ " + Math.round(price * 0.8);
+            
+            new AlertDialog.Builder(this)
+                .setTitle("¡Viaje Terminado!")
+                .setMessage("Resumen del servicio:\n\n" +
+                           "Cliente: " + name + "\n" +
+                           "Ganancia: " + earnings + "\n" +
+                           "Fecha: " + new SimpleDateFormat("dd/MM/yy HH:mm", Locale.getDefault()).format(new Date()))
+                .setPositiveButton("Aceptar", null)
+                .show();
+                
             hideRide();
             loadWallet();
             loadHistory();
