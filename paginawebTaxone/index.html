@@ -10,7 +10,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Outfit:wght@500;600;700&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <link rel="stylesheet" href="css/styles.css?v=20260806-26" />
+    <link rel="stylesheet" href="css/styles.css?v=20260809-106" />
   </head>
   <body>
     <header class="topbar">
@@ -27,7 +27,7 @@
         <button id="notification-button" class="header-icon notification" type="button" aria-label="Notificaciones" aria-controls="notification-panel" aria-expanded="false">♟<b id="notification-badge" hidden>0</b></button>
       </div>
       <section id="notification-panel" class="notification-panel" hidden aria-label="Notificaciones administrativas">
-        <header><div><small>CENTRO DE AVISOS</small><h2>Notificaciones</h2></div><button id="read-all-notifications" type="button">Marcar leídas</button></header>
+        <header><div><small>CENTRO DE AVISOS</small><h2>Notificaciones</h2></div><div style="display:flex;gap:10px;"><button id="read-all-notifications" type="button">Marcar leídas</button><button id="close-notifications" type="button" style="background:#df5050;border:2px solid #fff;color:#fff;width:32px;height:32px;border-radius:8px;font-weight:bold;cursor:pointer;display:grid;place-items:center;font-size:20px;">×</button></div></header>
         <div id="notification-list" class="notification-list"><p class="notification-empty">No tienes avisos pendientes.</p></div>
       </section>
     </header>
@@ -54,113 +54,128 @@
 
     <main class="workspace">
       <aside id="booking-panel" class="booking-panel">
-        <div class="panel-heading">
-          <h1>Agregar reservas</h1>
+        <div id="booking-form-content">
+          <div class="panel-heading">
+            <h1>Agregar reservas</h1>
+          </div>
+
+          <form id="booking-form">
+            <div class="form-grid two-cols">
+              <label class="field select-field">
+                <span>Tipo de servicio</span>
+                <select id="service-type">
+                  <option>Registrado</option>
+                  <option>Invitado</option>
+                </select>
+              </label>
+              <label class="field select-field">
+                <span>Cuándo</span>
+                <select id="travel-time">
+                  <option value="now">Viajar ahora</option>
+                  <option value="scheduled">Programar viaje</option>
+                </select>
+              </label>
+            </div>
+
+            <div id="schedule-fields" class="form-grid two-cols" hidden>
+              <label class="field">
+                <span>Fecha</span>
+                <input id="schedule-date" type="date" />
+              </label>
+              <label class="field">
+                <span>Hora</span>
+                <input id="schedule-time" type="time" />
+              </label>
+            </div>
+
+            <div class="customer-row customer-picker-wrap">
+              <label class="field grow">
+                <span>Cliente registrado</span>
+                <div class="customer-search-control"><span>⌕</span><input id="customer" type="search" placeholder="Buscar por nombre o teléfono" autocomplete="off" /><button id="registered-history-search" type="button" aria-label="Ver historial permanente del cliente" title="Ver viajes anteriores" disabled>⌕</button><button id="clear-customer" type="button" aria-label="Limpiar cliente">×</button></div>
+              </label>
+              <div id="customer-results" class="customer-results" hidden></div>
+            </div>
+            <div id="selected-customer" class="selected-customer" hidden></div>
+            <div id="guest-fields" class="guest-fields" hidden>
+              <div class="field guest-phone-field"><span>Teléfono de República Dominicana</span><div class="guest-phone-lookup"><div class="phone-control"><b>+1</b><input id="guest-phone" type="tel" inputmode="numeric" placeholder="809 000 0000" maxlength="12" autocomplete="tel" /></div><button id="guest-history-search" type="button" aria-label="Buscar nombre y viajes anteriores del teléfono" title="Buscar viajes anteriores">⌕</button></div></div>
+              <p id="guest-history-status" class="guest-history-status">Escribe el teléfono y toca la lupa.</p>
+              <label class="field guest-name-field"><span>Nombre del invitado</span><input id="guest-name" type="text" placeholder="Nombre y apellido" autocomplete="name" /></label>
+            </div>
+
+            <div class="route-block">
+              <div class="route-line"><span></span></div>
+              <div class="route-fields">
+                <label class="field address-field">
+                  <span>Recogida</span>
+                  <div class="address-control pickup-control"><input id="pickup" type="search" placeholder="Calle, sector, municipio o provincia" autocomplete="off" /><button id="search-pickup" type="button" aria-label="Buscar dirección de recogida">⌕</button></div>
+                  <div id="pickup-results" class="address-results" hidden></div>
+                  <button id="pick-pickup-map" class="pick-on-map pickup-pick" type="button"><i></i> Elegir recogida en el mapa</button>
+                </label>
+                <div id="extra-stops" class="extra-stops"></div>
+                <label class="field address-field">
+                  <span>Destino</span>
+                  <div class="address-control destination-control"><input id="destination" type="search" placeholder="Calle, sector, municipio o provincia" autocomplete="off" /><button id="search-destination" type="button" aria-label="Buscar dirección de destino">⌕</button></div>
+                  <div id="destination-results" class="address-results" hidden></div>
+                  <button id="pick-destination-map" class="pick-on-map destination-pick" type="button"><i></i> Elegir destino en el mapa</button>
+                </label>
+              </div>
+              <button id="add-stop" class="add-stop" type="button" aria-label="Añadir parada">+</button>
+            </div>
+
+            <div id="address-provider-status" class="address-provider-status" role="status"><i>RD</i><span>Direcciones de República Dominicana</span></div>
+
+            <div id="route-notice" class="notice"><span>✦</span> Selecciona origen y destino para ver las opciones disponibles.</div>
+
+            <label class="field full-field">
+              <span>Nota para el conductor</span>
+              <input id="dispatch-note" type="text" placeholder="Ej. Recoger en la entrada principal" />
+            </label>
+
+            <label class="field full-field">
+              <span>Buscar conductor activo u ocupado</span>
+              <div class="driver-search-control">
+                <input id="driver-assign-search" type="search" placeholder="Buscar conductor por nombre, vehículo o estado" autocomplete="off" />
+                <div id="driver-assigned-summary" class="driver-assigned-summary">Sin conductor asignado</div>
+                <input id="driver-assign-id" type="hidden" value="" />
+              </div>
+              <div id="driver-search-results" class="driver-search-results" hidden></div>
+              <small class="field-help">Escribe al menos 2 letras para filtrar conductores activos y ocupados.</small>
+            </label>
+
+            <div class="form-grid three-cols compact-fields">
+              <label class="field select-field">
+                <span>Pasajeros</span>
+                <select id="passenger-count-select"><option>1 pasajero</option><option>2 pasajeros</option><option>3 pasajeros</option></select>
+              </label>
+              <label class="field select-field">
+                <span>Paradas</span>
+                <select id="stop-count-select"><option value="0">Sin paradas</option><option value="1">1 parada</option><option value="2">2 paradas</option><option value="3">3 paradas</option></select>
+              </label>
+              <label class="field select-field">
+                <span>Pago</span>
+                <select id="payment-method-select"><option>Efectivo</option><option>Tarjeta</option><option>Cuenta empresa</option></select>
+              </label>
+            </div>
+
+            <div class="form-actions">
+              <button id="clear-form" class="button button-light" type="reset">↺ Limpiar</button>
+              <button class="button button-primary" type="submit">Añadir viaje <span>→</span></button>
+            </div>
+          </form>
         </div>
 
-        <form id="booking-form">
-          <div class="form-grid two-cols">
-            <label class="field select-field">
-              <span>Tipo de servicio</span>
-              <select id="service-type">
-                <option>Registrado</option>
-                <option>Invitado</option>
-              </select>
-            </label>
-            <label class="field select-field">
-              <span>Cuándo</span>
-              <select id="travel-time">
-                <option value="now">Viajar ahora</option>
-                <option value="scheduled">Programar viaje</option>
-              </select>
-            </label>
-          </div>
-
-          <div id="schedule-fields" class="form-grid two-cols" hidden>
-            <label class="field">
-              <span>Fecha</span>
-              <input id="schedule-date" type="date" />
-            </label>
-            <label class="field">
-              <span>Hora</span>
-              <input id="schedule-time" type="time" />
-            </label>
-          </div>
-
-          <div class="customer-row customer-picker-wrap">
-            <label class="field grow">
-              <span>Cliente registrado</span>
-              <div class="customer-search-control"><span>⌕</span><input id="customer" type="search" placeholder="Buscar por nombre o teléfono" autocomplete="off" /><button id="registered-history-search" type="button" aria-label="Ver historial permanente del cliente" title="Ver viajes anteriores" disabled>⌕</button><button id="clear-customer" type="button" aria-label="Limpiar cliente">×</button></div>
-            </label>
-            <div id="customer-results" class="customer-results" hidden></div>
-          </div>
-          <div id="selected-customer" class="selected-customer" hidden></div>
-          <div id="guest-fields" class="guest-fields" hidden>
-            <div class="field guest-phone-field"><span>Teléfono de República Dominicana</span><div class="guest-phone-lookup"><div class="phone-control"><b>+1</b><input id="guest-phone" type="tel" inputmode="numeric" placeholder="809 000 0000" maxlength="12" autocomplete="tel" /></div><button id="guest-history-search" type="button" aria-label="Buscar nombre y viajes anteriores del teléfono" title="Buscar viajes anteriores">⌕</button></div></div>
-            <p id="guest-history-status" class="guest-history-status">Escribe el teléfono y toca la lupa.</p>
-            <label class="field guest-name-field"><span>Nombre del invitado</span><input id="guest-name" type="text" placeholder="Nombre y apellido" autocomplete="name" /></label>
-          </div>
-
-          <div class="route-block">
-            <div class="route-line"><span></span></div>
-            <div class="route-fields">
-              <label class="field address-field">
-                <span>Recogida</span>
-                <div class="address-control pickup-control"><input id="pickup" type="search" placeholder="Calle, sector, municipio o provincia" autocomplete="off" /><button id="search-pickup" type="button" aria-label="Buscar dirección de recogida">⌕</button></div>
-                <div id="pickup-results" class="address-results" hidden></div>
-                <button id="pick-pickup-map" class="pick-on-map pickup-pick" type="button"><i></i> Elegir recogida en el mapa</button>
-              </label>
-              <div id="extra-stops" class="extra-stops"></div>
-              <label class="field address-field">
-                <span>Destino</span>
-                <div class="address-control destination-control"><input id="destination" type="search" placeholder="Calle, sector, municipio o provincia" autocomplete="off" /><button id="search-destination" type="button" aria-label="Buscar dirección de destino">⌕</button></div>
-                <div id="destination-results" class="address-results" hidden></div>
-                <button id="pick-destination-map" class="pick-on-map destination-pick" type="button"><i></i> Elegir destino en el mapa</button>
-              </label>
+        <!-- PANEL DE DETALLES DEL VIAJE (OJO) -->
+        <div id="trip-details-panel" style="position:absolute; inset:0; z-index:100; background:#fff; display:none; flex-direction:column;">
+            <div class="panel-heading" style="background:#0b2e47; color:#fff; padding:20px;">
+                <div style="display:flex; align-items:center; gap:15px;">
+                    <button id="close-trip-details" style="background:rgba(255,255,255,0.1); border:1.5px solid #fff; color:#fff; width:36px; height:36px; border-radius:10px; cursor:pointer; font-weight:bold; display:grid; place-items:center;">←</button>
+                    <div><small style="color:#f4c400; font-weight:800; letter-spacing:1px; font-size:10px;">DETALLES DEL SERVICIO</small><h1 id="details-trip-id" style="color:#fff; margin:0; font-size:22px;">---</h1></div>
+                </div>
             </div>
-            <button id="add-stop" class="add-stop" type="button" aria-label="Añadir parada">+</button>
-          </div>
-
-          <div id="address-provider-status" class="address-provider-status" role="status"><i>RD</i><span>Direcciones de República Dominicana</span></div>
-
-          <div id="route-notice" class="notice"><span>✦</span> Selecciona origen y destino para ver las opciones disponibles.</div>
-
-          <label class="field full-field">
-            <span>Nota para el conductor</span>
-            <input id="dispatch-note" type="text" placeholder="Ej. Recoger en la entrada principal" />
-          </label>
-
-          <label class="field full-field">
-            <span>Buscar conductor activo u ocupado</span>
-            <div class="driver-search-control">
-              <input id="driver-assign-search" type="search" placeholder="Buscar conductor por nombre, vehículo o estado" autocomplete="off" />
-              <div id="driver-assigned-summary" class="driver-assigned-summary">Sin conductor asignado</div>
-              <input id="driver-assign-id" type="hidden" value="" />
+            <div id="trip-details-content" style="padding:20px; overflow-y:auto; flex:1;">
+                <!-- Dinámico -->
             </div>
-            <div id="driver-search-results" class="driver-search-results" hidden></div>
-            <small class="field-help">Escribe al menos 2 letras para filtrar conductores activos y ocupados.</small>
-          </label>
-
-          <div class="form-grid three-cols compact-fields">
-            <label class="field select-field">
-              <span>Pasajeros</span>
-              <select id="passenger-count-select"><option>1 pasajero</option><option>2 pasajeros</option><option>3 pasajeros</option></select>
-            </label>
-            <label class="field select-field">
-              <span>Paradas</span>
-              <select id="stop-count-select"><option value="0">Sin paradas</option><option value="1">1 parada</option><option value="2">2 paradas</option><option value="3">3 paradas</option></select>
-            </label>
-            <label class="field select-field">
-              <span>Pago</span>
-              <select id="payment-method-select"><option>Efectivo</option><option>Tarjeta</option><option>Cuenta empresa</option></select>
-            </label>
-          </div>
-
-          <div class="form-actions">
-            <button id="clear-form" class="button button-light" type="reset">↺ Limpiar</button>
-            <button class="button button-primary" type="submit">Añadir viaje <span>→</span></button>
-          </div>
-        </form>
+        </div>
 
         <div id="booking-confirmation-modal" class="dispatch-modal-overlay" hidden>
           <section class="dispatch-cancel-card" role="dialog" aria-modal="true" aria-labelledby="booking-confirmation-title">
@@ -244,7 +259,7 @@
       <div class="trip-table-wrap">
         <table>
           <thead>
-            <tr class="trip-column-headings"><th>Cancelar</th><th>Viaje</th><th>Estado</th><th>Pasajero</th><th>Teléfono</th><th>Conductor</th><th>Recogida</th><th>Destino</th><th>Fecha y hora</th></tr>
+            <tr class="trip-column-headings"><th>Acciones</th><th>Viaje</th><th>Estado</th><th>Pasajero</th><th>Teléfono</th><th>Conductor</th><th>Contactado</th><th>Recogida</th><th>Destino</th><th>Fecha y hora</th></tr>
             <tr class="trip-filter-row">
               <th><span class="filter-action-label">Acción</span></th>
               <th><input id="filter-trip-id" type="search" placeholder="Código…" aria-label="Filtrar por código de viaje" /></th>
@@ -252,13 +267,14 @@
               <th><input id="filter-trip-passenger" type="search" placeholder="Nombre…" aria-label="Filtrar por pasajero" /></th>
               <th><input id="filter-trip-phone" type="search" inputmode="tel" placeholder="Teléfono…" aria-label="Filtrar por teléfono" /></th>
               <th><input id="filter-trip-driver" type="search" placeholder="Conductor…" aria-label="Filtrar por conductor" /></th>
+              <th>-</th>
               <th><input id="filter-trip-pickup" type="search" placeholder="Recogida…" aria-label="Filtrar por dirección de recogida" /></th>
               <th><input id="filter-trip-destination" type="search" placeholder="Destino…" aria-label="Filtrar por dirección de destino" /></th>
               <th><select id="filter-trip-date" aria-label="Filtrar por fecha"><option value="">Cualquier fecha</option><option value="today">Hoy</option><option value="7days">Últimos 7 días</option><option value="30days">Últimos 30 días</option></select></th>
             </tr>
           </thead>
           <tbody id="trip-table-body">
-            <tr id="empty-trips-row"><td colspan="9" class="empty-trips">Los viajes nuevos aparecerán aquí cuando sean creados.</td></tr>
+            <tr id="empty-trips-row"><td colspan="10" class="empty-trips">Los viajes nuevos aparecerán aquí cuando sean creados.</td></tr>
           </tbody>
         </table>
       </div>
@@ -305,6 +321,6 @@
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <script src="js/app.js?v=20260809-1"></script>
+    <script src="js/app.js?v=20260810-131"></script>
   </body>
 </html>

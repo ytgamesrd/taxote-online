@@ -1,6 +1,6 @@
 const ACTIVE_RIDE_STATUSES = ["accepted", "driver_arriving", "arrived", "in_progress"];
 const USER_CANCELLABLE_STATUSES = ["pending", "accepted", "driver_arriving", "arrived"];
-const SESSION_DAYS = 30; // v120 - FINAL STABLE DEPLOY
+const SESSION_DAYS = 30;
 let schemaReady = false;
 
 const CORE_SCHEMA = [
@@ -15,7 +15,7 @@ const CORE_SCHEMA = [
   `CREATE TABLE IF NOT EXISTS drivers (id INTEGER PRIMARY KEY AUTOINCREMENT, public_id TEXT NOT NULL UNIQUE, first_name TEXT NOT NULL, last_name TEXT NOT NULL, email TEXT NOT NULL COLLATE NOCASE UNIQUE, phone TEXT NOT NULL UNIQUE, password_hash TEXT NOT NULL, password_salt TEXT NOT NULL, cedula TEXT NOT NULL UNIQUE, vehicle_type TEXT NOT NULL, vehicle_brand TEXT NOT NULL, vehicle_model TEXT NOT NULL, vehicle_color TEXT NOT NULL, vehicle_plate TEXT NOT NULL COLLATE NOCASE UNIQUE, payment_method TEXT, points_balance INTEGER NOT NULL DEFAULT 0, fcm_token TEXT, status TEXT NOT NULL DEFAULT 'pending', review_message TEXT, is_online INTEGER NOT NULL DEFAULT 0, is_available INTEGER NOT NULL DEFAULT 0, current_lat REAL, current_lon REAL, current_accuracy REAL, current_bearing REAL, current_speed_kph REAL, last_seen_at TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, reviewed_at TEXT, last_login_at TEXT)`,
   `CREATE TABLE IF NOT EXISTS driver_documents (id INTEGER PRIMARY KEY AUTOINCREMENT, driver_id INTEGER NOT NULL, kind TEXT NOT NULL, data_url TEXT NOT NULL, created_at TEXT NOT NULL, UNIQUE(driver_id,kind))`,
   `CREATE TABLE IF NOT EXISTS driver_sessions (token_hash TEXT PRIMARY KEY, driver_id INTEGER NOT NULL, expires_at TEXT NOT NULL, created_at TEXT NOT NULL)`,
-  `CREATE TABLE IF NOT EXISTS rides (id INTEGER PRIMARY KEY AUTOINCREMENT, public_id TEXT NOT NULL UNIQUE, profile_id INTEGER NOT NULL, passenger_type TEXT NOT NULL DEFAULT 'guest', passenger_name TEXT NOT NULL, passenger_phone TEXT NOT NULL, pickup_address TEXT NOT NULL, pickup_lat REAL NOT NULL, pickup_lon REAL NOT NULL, destination_address TEXT NOT NULL, destination_lat REAL NOT NULL, destination_lon REAL NOT NULL, status TEXT NOT NULL DEFAULT 'pending', driver_id INTEGER, note TEXT, payment_method TEXT, passenger_count INTEGER NOT NULL DEFAULT 1, scheduled_at TEXT, price_dop INTEGER NOT NULL DEFAULT 0, distance_km REAL NOT NULL DEFAULT 0, duration_min INTEGER NOT NULL DEFAULT 0, driver_earnings_dop INTEGER NOT NULL DEFAULT 0, created_by TEXT NOT NULL DEFAULT 'Administrador', contacted_at TEXT, contacted_by TEXT, created_at TEXT NOT NULL, accepted_at TEXT, arrived_at TEXT, started_at TEXT, completed_at TEXT, cancelled_at TEXT, closed_at TEXT, cancellation_reason TEXT, cancellation_note TEXT, cancelled_by TEXT)`,
+  `CREATE TABLE IF NOT EXISTS rides (id INTEGER PRIMARY KEY AUTOINCREMENT, public_id TEXT NOT NULL UNIQUE, profile_id INTEGER NOT NULL, passenger_type TEXT NOT NULL DEFAULT 'guest', passenger_name TEXT NOT NULL, passenger_phone TEXT NOT NULL, pickup_address TEXT NOT NULL, pickup_lat REAL NOT NULL, pickup_lon REAL NOT NULL, destination_address TEXT NOT NULL, destination_lat REAL NOT NULL, destination_lon REAL NOT NULL, status TEXT NOT NULL DEFAULT 'pending', driver_id INTEGER, note TEXT, payment_method TEXT, passenger_count INTEGER NOT NULL DEFAULT 1, scheduled_at TEXT, price_dop INTEGER NOT NULL DEFAULT 0, distance_km REAL NOT NULL DEFAULT 0, duration_min INTEGER NOT NULL DEFAULT 0, driver_earnings_dop INTEGER NOT NULL DEFAULT 0, contacted_at TEXT, contacted_by TEXT, created_at TEXT NOT NULL, accepted_at TEXT, arrived_at TEXT, started_at TEXT, completed_at TEXT, cancelled_at TEXT, closed_at TEXT, cancellation_reason TEXT, cancellation_note TEXT, cancelled_by TEXT)`,
   `CREATE TABLE IF NOT EXISTS ride_stops (id INTEGER PRIMARY KEY AUTOINCREMENT, ride_id INTEGER NOT NULL, position INTEGER NOT NULL, address TEXT NOT NULL, lat REAL NOT NULL, lon REAL NOT NULL, UNIQUE(ride_id,position))`,
   `CREATE TABLE IF NOT EXISTS ride_rejections (id INTEGER PRIMARY KEY AUTOINCREMENT, ride_id INTEGER NOT NULL, driver_id INTEGER NOT NULL, created_at TEXT NOT NULL, UNIQUE(ride_id,driver_id))`,
   `CREATE TABLE IF NOT EXISTS driver_deposits (id INTEGER PRIMARY KEY AUTOINCREMENT, driver_id INTEGER NOT NULL, points_requested INTEGER NOT NULL, amount_dop INTEGER NOT NULL, proof_data TEXT, status TEXT NOT NULL DEFAULT 'pending', created_at TEXT NOT NULL, updated_at TEXT NOT NULL)`,
@@ -30,12 +30,65 @@ const CORE_SCHEMA = [
   `CREATE INDEX IF NOT EXISTS idx_chat_ride ON chat_messages(ride_id,created_at)`
 ];
 
+async function postWhatsApp(request, env) {
+  const WHATSAPP_TOKEN = "EAAOmZBRfZC5DgBSFgk9mtd6b9UZAafRo1YJYCjHZBhmWta99GaXKVG7cJWQ9XrJzq1W2sTXABR5TJxsEjfxmXZA9qs8wTxdSnFYiLrZBprmHoA7DStZAXHf1G0lBQxcHVigA0kahOZBL0ZC9dyRvZCTh8gEkSfznvZCHRZBOtUsCHPUZAuyRZA432kAR8wqOSBRXfXwnQCo0XvFv9taxVMr3ZCSSf3TYbxOruikjhEJ84TGspKsl5NZB6bay";
+  const PHONE_NUMBER_ID = "1220819124451791";
+  const VERIFY_TOKEN = "taxote_whatsapp_verify_token";
+
+  if (request.method === "GET") {
+    const url = new URL(request.url);
+    const mode = url.searchParams.get("hub.mode");
+    const token = url.searchParams.get("hub.verify_token");
+    const challenge = url.searchParams.get("hub.challenge");
+    if (mode === "subscribe" && token === VERIFY_TOKEN) return new Response(challenge, { status: 200 });
+    return new Response("Forbidden", { status: 403 });
+  }
+
+  if (request.method === "POST") {
+    try {
+      const body = await request.json();
+      const db = env.taxote_db;
+
+      if (body.object === "whatsapp_business_account") {
+        const value = body.entry?.[0]?.changes?.[0]?.value;
+        const message = value?.messages?.[0];
+
+        if (message) {
+          const from = message.from;
+          const text = message.text?.body || "Mensaje de WhatsApp";
+          const contactName = value?.contacts?.[0]?.profile?.name || "Usuario WhatsApp";
+
+          await db.prepare(`INSERT INTO admin_notifications(kind,title,body,entity_type,entity_id,created_at) VALUES(?,?,?,?,?,?)`)
+            .bind("whatsapp", `WhatsApp de ${contactName}`, text, "whatsapp", from, new Date().toISOString()).run();
+        }
+      }
+      return new Response("EVENT_RECEIVED", { status: 200 });
+    } catch (e) {
+      return new Response("Error", { status: 500 });
+    }
+  }
+}
+
+async function sendWhatsApp(to, templateName, language = "en_US") {
+  const WHATSAPP_TOKEN = "EAAOmZBRfZC5DgBSEMB1g9wmQu937RGtYsPu44OnsA2RZBgZBPpWqSnqLbzmB8IOUQF84SBKlbybpdFi4lh6ZABaZAzfnBzfdN7kXc2KRswJcDq1HmLWmEyd2la1FN4AI71LfCZA1tr1ZBKVkkjLp8Qs90X7SwIDuOdPAl3kiHSQtHk4Sb3XXZCkPCJ5pFsaGyH2tsapaZBtcos44hy3ydh8GnwsSUpUZAz6jZCb98RHSkXrJYgTuuiHsZCa8ZD";
+  const PHONE_NUMBER_ID = "1220819124451791";
+
+  const response = await fetch(`https://graph.facebook.com/v21.0/${PHONE_NUMBER_ID}/messages`, {
+    method: "POST",
+    headers: { "Authorization": `Bearer ${WHATSAPP_TOKEN}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      messaging_product: "whatsapp",
+      to: to,
+      type: "template",
+      template: { name: templateName, language: { code: language } }
+    })
+  });
+  return await response.json();
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
-    if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders() });
-
-    // Webhook de WhatsApp
     if (url.pathname === "/api/whatsapp/webhook") return postWhatsApp(request, env);
     if (url.pathname === "/api/whatsapp/test" && request.method === "POST") {
         const target = url.searchParams.get("to") || "18293742013";
@@ -43,27 +96,56 @@ export default {
         return json(result);
     }
 
-    if (!url.pathname.startsWith("/api/")) return env.ASSETS.fetch(request);
+    if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders() });
 
     try {
       if (!env.taxote_db) throw new HttpError(503, "La base de datos taxote_db no está vinculada.");
       await ensureSchema(env.taxote_db);
+
+      const path = url.pathname.replace(/\/$/, "");
+      const method = request.method;
+
+      // Admin Login
+      if (path === "/api/admin/login" && method === "POST") {
+        const body = await bodyJson(request);
+        if (body.username === "TAXOTEadmin1995" && body.password === "123Taxote123@1995") {
+          const token = id("ADM");
+          const expires = new Date();
+          expires.setHours(23, 59, 59, 999);
+          return json({ ok: true, token }, 200, { "Set-Cookie": `taxote_admin_session=${token}; Path=/; HttpOnly; Secure; SameSite=Lax; Expires=${expires.toUTCString()}` });
+        }
+        throw new HttpError(401, "Acceso denegado.");
+      }
+
+      // Cleanup Tasks (Automated simple cleanup)
+      if (Math.random() < 0.05) { // Run occasionally
+          const now = new Date();
+          if (now.getHours() === 0) { // Midnight
+              await env.taxote_db.prepare("DELETE FROM chat_messages WHERE channel='private' OR channel='public'").run();
+          }
+      }
+
+      // Middleware Admin
+      const adminPaths = ["/api/admin/", "/api/dispatch/", "/reports.html", "/drivers.html", "/deposits.html", "/history.html", "/drivers-chat.html", "/conversation-history.html"];
+      const isHtmlPage = !path.startsWith("/api/") && (path.endsWith(".html") || path === "" || path === "/");
+      const isAdminPath = adminPaths.some(p => path.startsWith(p)) || (isHtmlPage && (path === "" || path === "/" || adminPaths.some(p => path === p.replace(".html", ""))));
+
+      if (isAdminPath) {
+        const cookies = parseCookies(request);
+        if (!cookies.taxote_admin_session) {
+          if (!path.startsWith("/api/")) return Response.redirect(`${url.origin}/admin-login.html`, 302);
+          throw new HttpError(401, "No autorizado.");
+        }
+      }
+
+      if (!url.pathname.startsWith("/api/")) return env.ASSETS.fetch(request);
+
       return await handleApi(request, env, url);
     } catch (error) {
       const status = error instanceof HttpError ? error.status : 500;
       console.error("TAXOTE API ERROR:", error);
-      // Para errores 500 devolvemos el mensaje real para poder depurar
-      return json({ error: error.message || "Ocurrió un error interno en TAXOTE." }, status);
+      return json({ error: error.message || "Ocurrió un error interno." }, status);
     }
-  },
-  async scheduled(event, env) {
-    // Tarea automatizada: Limpiar chats admin-conductor cada 24h
-    // Los chats de viaje (cliente-conductor) se mantienen.
-    const db = env.taxote_db;
-    if (!db) return;
-    const threshold = new Date(Date.now() - 24 * 3600000).toISOString();
-    await db.prepare("DELETE FROM chat_messages WHERE channel IN ('private', 'public') AND created_at < ?").bind(threshold).run();
-    console.log("TAXOTE: Chats administrativos antiguos eliminados.");
   }
 };
 
@@ -198,31 +280,6 @@ async function handleApi(request, env, url) {
   const db = env.taxote_db;
   const path = url.pathname.replace(/\/$/, "");
   const method = request.method;
-
-  // Admin Login
-  if (path === "/api/admin/login" && method === "POST") {
-    const body = await bodyJson(request);
-    if (body.username === "TAXOTEadmin1995" && body.password === "123Taxote123@1995") {
-      const token = id("ADM");
-      const expires = new Date();
-      expires.setHours(23, 59, 59, 999); // Expira a medianoche
-      return json({ ok: true, token }, 200, { "Set-Cookie": `taxote_admin_session=${token}; Path=/; HttpOnly; Secure; SameSite=Lax; Expires=${expires.toUTCString()}` });
-    }
-    throw new HttpError(401, "Usuario o contraseña de administrador incorrectos.");
-  }
-
-  // Middleware Admin
-  const adminPaths = ["/api/admin/", "/api/dispatch/", "/reports.html", "/drivers.html", "/deposits.html", "/history.html", "/drivers-chat.html", "/conversation-history.html"];
-  const isPage = !path.startsWith("/api/");
-  const isAdminPath = adminPaths.some(p => path.startsWith(p)) || (isPage && (path === "" || path === "/" || adminPaths.some(p => path === p.replace(".html", ""))));
-
-  if (isAdminPath) {
-    const cookies = parseCookies(request);
-    if (!cookies.taxote_admin_session) {
-      if (isPage) return Response.redirect(`${url.origin}/admin-login.html`, 302);
-      throw new HttpError(401, "No tienes sesión de administrador.");
-    }
-  }
 
   if (path === "/api/health") return json({ ok: true, service: "TAXOTE Online", time: nowIso() });
   if (path === "/api/maps-status") return json({ googleConfigured: false, fallback: false, provider: "OpenStreetMap RD" });
@@ -601,16 +658,6 @@ async function handleApi(request, env, url) {
     return json({ok:true});
   }
 
-  rideMatch=path.match(/^\/api\/dispatch\/rides\/([^/]+)\/contacted$/);
-  if(rideMatch && method==="POST") {
-    const ride=await rideByPublicId(db,decodeURIComponent(rideMatch[1]));
-    if(!ride) throw new HttpError(404,"El servicio no existe.");
-    const body=await bodyJson(request);
-    const stamp=nowIso();
-    await db.prepare(`UPDATE rides SET contacted_at=?,contacted_by=? WHERE id=?`).bind(stamp,clean(body.adminName)||"Administrador",ride.id).run();
-    return json({ok:true,contactedAt:stamp});
-  }
-
   if (path === "/api/admin/drivers" && method === "GET") {
     const {results}=await db.prepare(`SELECT * FROM drivers ORDER BY created_at DESC`).all();
     return json(results.map((row)=>driverView(row)));
@@ -633,28 +680,17 @@ async function handleApi(request, env, url) {
     return json({driver:detailed});
   }
   if(driverMatch && method==="DELETE") {
-    // ... existante DELETE logic ...
-  }
-  if(driverMatch && method==="PATCH") {
-    const body = await bodyJson(request);
-    const driverId = decodeURIComponent(driverMatch[1]);
-    const fields = [];
-    const values = [];
-    if (body.firstName) { fields.push("first_name=?"); values.push(clean(body.firstName)); }
-    if (body.lastName) { fields.push("last_name=?"); values.push(clean(body.lastName)); }
-    if (body.email) { fields.push("email=?"); values.push(clean(body.email).toLowerCase()); }
-    if (body.phone) { fields.push("phone=?"); values.push(phone(body.phone)); }
-    if (body.password) {
-        const salt = crypto.randomUUID();
-        const hash = await passwordHash(String(body.password), salt);
-        fields.push("password_hash=?", "password_salt=?");
-        values.push(hash, salt);
-    }
-    if (!fields.length) throw new HttpError(400, "No hay campos para actualizar.");
-    values.push(nowIso(), driverId);
-    const result = await db.prepare(`UPDATE drivers SET ${fields.join(",")},updated_at=? WHERE public_id=?`).bind(...values).run();
-    if (!result.meta.changes) throw new HttpError(404, "No se encontró el conductor.");
-    return json({ ok: true });
+    const driver=await db.prepare(`SELECT * FROM drivers WHERE public_id=?`).bind(decodeURIComponent(driverMatch[1])).first();
+    if(!driver) throw new HttpError(404,"No se encontró el conductor.");
+    const active=await db.prepare(`SELECT id FROM rides WHERE driver_id=? AND status IN ('accepted','driver_arriving','arrived','in_progress')`).bind(driver.id).first();
+    if(active) throw new HttpError(409,"No puedes eliminar un conductor con un servicio activo.");
+    await db.batch([
+      db.prepare(`DELETE FROM driver_documents WHERE driver_id=?`).bind(driver.id),
+      db.prepare(`DELETE FROM driver_sessions WHERE driver_id=?`).bind(driver.id),
+      db.prepare(`DELETE FROM ride_rejections WHERE driver_id=?`).bind(driver.id),
+      db.prepare(`DELETE FROM drivers WHERE id=?`).bind(driver.id)
+    ]);
+    return json({ok:true});
   }
   driverMatch=path.match(/^\/api\/admin\/drivers\/([^/]+)\/status$/);
   if(driverMatch && method==="POST") {
@@ -698,36 +734,6 @@ async function handleApi(request, env, url) {
       if(ids.length) await db.prepare(`UPDATE admin_notifications SET read_at=? WHERE id IN (${ids.map(()=>"?").join(",")})`).bind(stamp,...ids).run();
     }
     return json({ok:true});
-  }
-
-  // Reports API
-  if (path === "/api/reports" && method === "POST") {
-    const body = await bodyJson(request);
-    const publicId = id("REP");
-    const stamp = nowIso();
-    await db.prepare(`INSERT INTO reports(public_id,reporter_type,reporter_id,reporter_name,ride_id,category,description,photo_data,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)`)
-      .bind(publicId, clean(body.reporterType), clean(body.reporterId), clean(body.reporterName), clean(body.rideId), clean(body.category), clean(body.description), body.photo||null, 'new', stamp, stamp).run();
-    await notify(db, "report", "Nuevo reporte recibido", `Reporte ${publicId}: ${clean(body.category)}`, "report", publicId);
-    return json({ ok: true, id: publicId }, 201);
-  }
-
-  if (path === "/api/admin/reports" && method === "GET") {
-    const {results} = await db.prepare(`SELECT * FROM reports ORDER BY created_at DESC LIMIT 500`).all();
-    return json(results);
-  }
-
-  let reportMatch = path.match(/^\/api\/admin\/reports\/([^/]+)$/);
-  if (reportMatch && method === "PATCH") {
-    const body = await bodyJson(request);
-    const reportId = decodeURIComponent(reportMatch[1]);
-    const stamp = nowIso();
-    const fields = ["updated_at=?"];
-    const values = [stamp];
-    if (body.status) { fields.push("status=?"); values.push(clean(body.status)); }
-    if (body.read) { fields.push("read_at=?"); values.push(stamp); }
-    values.push(reportId);
-    await db.prepare(`UPDATE reports SET ${fields.join(",")} WHERE public_id=?`).bind(...values).run();
-    return json({ ok: true });
   }
 
   if (path === "/api/admin/deposits" && method === "GET") {

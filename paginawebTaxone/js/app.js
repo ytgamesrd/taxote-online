@@ -1289,13 +1289,6 @@ async function markTripContacted(tripId) {
     }
 }
 
-function viewTripDetails(tripId) {
-    const trip = allTrips().find(t => t.id === tripId);
-    if (!trip) return;
-    const details = `ID: ${trip.id}\nEstado: ${trip.status}\nPasajero: ${trip.passenger} (${trip.phone})\nRecogida: ${trip.pickup}\nDestino: ${trip.destination}\nConductor: ${trip.driver}\nPrecio: RD$ ${trip.priceDop}`;
-    alert("DETALLES DEL VIAJE\n\n" + details);
-}
-
 const tripFilterControls = {
   global: $("#trip-search"),
   id: $("#filter-trip-id"),
@@ -1741,19 +1734,109 @@ function driverLocationIcon(driver) {
   const bearing = Number(driver.location?.bearing || 0);
   return L.divIcon({
     className: "taxote-driver-car-wrapper",
-    html: `<span class="taxote-driver-car ${state}" title="${state === "busy" ? "Conductor en servicio" : state === "available" ? "Conductor disponible" : "Última ubicación"}" style="transform:rotate(${bearing}deg)"><img src="/assets/taxote-car.png" alt="" style="width:32px;height:35px;" /></span>`,
+    html: `<div class="taxote-driver-car ${state}" title="${state === "busy" ? "Conductor en servicio" : state === "available" ? "Conductor disponible" : "Última ubicación"}" style="transform:rotate(${bearing}deg); background:none !important;"><img src="/assets/taxote-car.png" alt="" style="width:32px;height:35px; background:none !important;" /></div>`,
     iconSize: [32, 35],
     iconAnchor: [16, 17]
   });
 }
 
 function viewTripDetails(tripId) {
-    const trip = allTrips().find(t => t.id === tripId);
-    if (!trip) return;
-    showToast(`Cargando detalles de ${tripId}...`);
-    // Aquí podrías abrir un modal con toda la info: nota, paradas, etc.
-    // Por ahora mostramos los datos básicos en toast o consola
-    console.log("Detalles del viaje:", trip);
+    const trip = dispatchTrips.find(t => t.id === tripId) || savedTrips.find(t => t.id === tripId);
+    if (!trip) return showToast("No se encontró la información del viaje.");
+
+    const panel = $("#trip-details-panel");
+    const content = $("#trip-details-content");
+    const mainForm = $("#booking-form-content");
+
+    $("#details-trip-id").textContent = trip.id;
+
+    let stopsHtml = "";
+    if (trip.stops && trip.stops.length > 0) {
+        stopsHtml = `<div style="margin-top:15px;"><b>Paradas:</b><ul style="padding-left:20px; margin-top:5px;">` +
+            trip.stops.map((s, i) => `<li style="font-size:13px; color:#444; margin-bottom:5px;">Punto C${i+1}: ${escapeHtml(s.address)}</li>`).join("") +
+            `</ul></div>`;
+    }
+
+    content.innerHTML = `
+        <div style="display:flex; flex-direction:column; gap:20px;">
+            <div style="background:#f8f9fa; padding:15px; border-radius:12px; border:1px solid #eee;">
+                <small style="color:#888; font-weight:bold; text-transform:uppercase; font-size:10px;">Cliente</small>
+                <div style="font-size:18px; font-weight:800; color:#0b2e47; margin-top:5px;">${escapeHtml(trip.passenger)}</div>
+                <div style="font-size:14px; color:#666;">${escapeHtml(trip.phone)}</div>
+            </div>
+
+            <div class="location-list" style="padding-left:15px; position:relative;">
+                <style>
+                    .loc-item { position:relative; padding-left:25px; margin-bottom:15px; }
+                    .loc-item::before { content:''; position:absolute; left:0; top:5px; width:12px; height:12px; border-radius:50%; border:2px solid #fff; box-shadow:0 2px 4px rgba(0,0,0,0.1); }
+                    .loc-a::before { background:#000; }
+                    .loc-b::before { background:#1e88e5; }
+                    .loc-c::before { background:#ffc107; }
+                </style>
+                <div class="loc-item loc-a"><small style="display:block; font-size:10px; font-weight:800; color:#aaa;">RECOGIDA (A)</small><div style="font-size:13px;">${escapeHtml(trip.pickup)}</div></div>
+                ${trip.stops ? trip.stops.map((s,i) => `<div class="loc-item loc-c"><small style="display:block; font-size:10px; font-weight:800; color:#aaa;">PARADA (C${i+1})</small><div style="font-size:13px;">${escapeHtml(s.address)}</div></div>`).join("") : ""}
+                <div class="loc-item loc-b"><small style="display:block; font-size:10px; font-weight:800; color:#aaa;">DESTINO (B)</small><div style="font-size:13px;">${escapeHtml(trip.destination)}</div></div>
+            </div>
+
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+                <div style="background:#e8f5e9; padding:12px; border-radius:10px;">
+                    <small style="color:#2e7d32; font-weight:bold; font-size:9px;">PRECIO</small>
+                    <div style="font-size:18px; font-weight:800; color:#1b5e20;">${formatPriceDop(trip.priceDop)}</div>
+                </div>
+                <div style="background:#fff3e0; padding:12px; border-radius:10px;">
+                    <small style="color:#ef6c00; font-weight:bold; font-size:9px;">DISTANCIA</small>
+                    <div style="font-size:18px; font-weight:800; color:#e65100;">${trip.distanceKm.toFixed(1)} km</div>
+                </div>
+            </div>
+
+            ${trip.note ? `<div style="background:#fffde7; padding:15px; border-radius:10px; border-left:4px solid #fbc02d; font-style:italic; font-size:13px;"><b>Nota:</b> ${escapeHtml(trip.note)}</div>` : ""}
+
+            <div style="border-top:1px solid #eee; padding-top:15px; margin-top:10px;">
+                <small style="color:#aaa; font-weight:bold; font-size:10px;">CONDUCTOR ASIGNADO</small>
+                <div style="font-size:15px; font-weight:700; color:#333; margin-top:5px;">${escapeHtml(trip.driver || "Buscando...")}</div>
+            </div>
+        </div>
+    `;
+
+    mainForm.style.display = "none";
+    panel.style.display = "flex";
+
+    // Dibujar en el mapa
+    if (map) {
+        window.clearSelectionMarkers?.();
+        const points = [];
+        if (trip.pickupLat) points.push({lat: trip.pickupLat, lon: trip.pickupLon, label: 'A', type: 'a'});
+        if (trip.stops) trip.stops.forEach((s, i) => points.push({lat: s.lat, lon: s.lon, label: 'C'+(i+1), type: 'c'}));
+        if (trip.destinationLat) points.push({lat: trip.destinationLat, lon: trip.destinationLon, label: 'B', type: 'b'});
+
+        // Renderizar marcadores (usando lógica existente o similar)
+        points.forEach(p => {
+            const m = L.marker([p.lat, p.lon], {icon: pointIcon(p.label, p.type)}).addTo(map);
+            // Podríamos guardarlos para limpiar después
+        });
+
+        if (points.length > 0) {
+            map.fitBounds(L.latLngBounds(points.map(p => [p.lat, p.lon])), {padding: [50, 50]});
+        }
+    }
+}
+
+$("#close-trip-details")?.addEventListener("click", () => {
+    $("#trip-details-panel").style.display = "none";
+    $("#booking-form-content").style.display = "block";
+    if (map) map.invalidateSize();
+});
+
+async function markTripContacted(tripId) {
+    const adminName = "TAXOTEadmin1995"; // Hardcoded for now per request
+    try {
+        await fetchJson(`/api/dispatch/rides/${encodeURIComponent(tripId)}/contact`, {
+            method: "POST",
+            body: { contactedBy: adminName }
+        });
+        showToast("Viaje marcado como contactado.");
+        await loadDispatchTrips();
+    } catch (error) { showToast(error.message); }
 }
 
 function driverLocationPopup(driver) {
