@@ -55,7 +55,6 @@ export default {
     const url = new URL(request.url), db = env.taxote_db;
     if (url.pathname === "/api/whatsapp/webhook") return postWhatsApp(request, env);
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders() });
-
     try {
       if (!db) throw new HttpError(503, "Base de datos no vinculada.");
       await ensureSchema(db);
@@ -68,7 +67,7 @@ export default {
           const token = id("ADM"), expires = new Date(); expires.setHours(23, 59, 59, 999);
           return json({ ok: true, token }, 200, { "Set-Cookie": `taxote_admin_session=${token}; Path=/; Secure; SameSite=Lax; Expires=${expires.toUTCString()}` });
         }
-        throw new HttpError(401, "Credenciales incorrectas.");
+        throw new HttpError(401, "Usuario o contraseña de administrador incorrectos.");
       }
 
       // Midnight cleanup
@@ -79,7 +78,6 @@ export default {
       const adminPaths = ["/api/admin/", "/api/dispatch/", "/reports.html", "/drivers.html", "/deposits.html", "/history.html", "/drivers-chat.html", "/conversation-history.html"];
       const isHtml = !path.startsWith("/api/") && (path.endsWith(".html") || path === "" || path === "/");
       const isAdmin = adminPaths.some(p => path.startsWith(p)) || (isHtml && (path === "" || path === "/" || adminPaths.some(p => path === p.replace(".html", ""))));
-
       if (isAdmin) {
         const cookies = parseCookies(request);
         if (!cookies.taxote_admin_session) {
@@ -93,7 +91,7 @@ export default {
     } catch (error) {
       const status = error instanceof HttpError ? error.status : 500;
       console.error("TAXOTE API ERROR:", error);
-      return json({ error: error.message || "Error interno." }, status);
+      return json({ error: error.message || "Ocurrió un error interno." }, status);
     }
   }
 };
@@ -109,7 +107,6 @@ function clean(v) { return String(v ?? "").trim(); }
 function phone(v) { let d = String(v ?? "").replace(/\D/g, ""); if (d.length === 11 && d.startsWith("1")) d = d.slice(1); return d; }
 function validRdPhone(v) { return /^(809|829|849)\d{7}$/.test(phone(v)); }
 function safeNumber(v, n) { const num = Number(v); if (!Number.isFinite(num)) throw new HttpError(400, `${n} inválido.`); return num; }
-function validateLocation(v, n) { if (!v || clean(v.address).length < 2) throw new HttpError(400, `Selecciona ${n}.`); const lat = safeNumber(v.lat, `Lat de ${n}`), lon = safeNumber(v.lon, `Lon de ${n}`); return { address: clean(v.address), lat, lon }; }
 function parseCookies(req) { const c = {}; (req.headers.get("cookie") || "").split(";").forEach(p => { const i = p.indexOf("="); if (i > 0) c[p.slice(0, i).trim()] = decodeURIComponent(p.slice(index + 1).trim()); }); return c; }
 function sessionCookie(n, t, cl = false) { return `${n}=${cl ? "" : encodeURIComponent(t)}; Path=/; Secure; SameSite=Lax; Max-Age=${cl ? 0 : SESSION_DAYS * 86400}`; }
 function bytesToHex(b) { return [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, "0")).join(""); }
@@ -119,12 +116,9 @@ async function createSession(db, t, o, idVal) { const tok = `${crypto.randomUUID
 async function userSession(req, db) { const t = parseCookies(req).taxote_user_session; if (!t) return null; return db.prepare(`SELECT p.* FROM sessions s JOIN profiles p ON p.id=s.profile_id WHERE s.token_hash=? AND s.expires_at>?`).bind(await sha256(t), nowIso()).first(); }
 async function driverSession(req, db) { const t = parseCookies(req).taxote_driver_session; if (!t) return null; return db.prepare(`SELECT d.* FROM driver_sessions s JOIN drivers d ON d.id=s.driver_id WHERE s.token_hash=? AND s.expires_at>?`).bind(await sha256(t), nowIso()).first(); }
 
-function driverView(row, detailed = false) {
-  const v = { id: row.public_id, name: `${row.first_name} ${row.last_name}`.trim(), phone: row.phone, email: row.email, vehiclePlate: row.vehicle_plate, vehicleBrand: row.vehicle_brand, vehicleModel: row.vehicle_model, vehicleColor: row.vehicle_color, vehicleType: row.vehicle_type, status: row.status, online: Boolean(row.is_online), points: Number(row.points_balance || 0), createdAt: row.created_at };
-  if (detailed) v.documents = { selfie: documentUrl(row.public_id, "selfie"), idFront: documentUrl(row.public_id, "idFront"), vehicle: documentUrl(row.public_id, "vehicle") };
-  return v;
-}
+function profileView(row) { return { id: row.public_id, name: row.name, phone: row.phone, email: row.email || "", kind: row.kind }; }
 function documentUrl(idVal, k) { return `/api/admin/drivers/${encodeURIComponent(idVal)}/document/${encodeURIComponent(k)}`; }
+function driverView(row) { return { id: row.public_id, name: `${row.first_name} ${row.last_name}`.trim(), phone: row.phone, email: row.email, vehiclePlate: row.vehicle_plate, vehicleBrand: row.vehicle_brand, vehicleModel: row.vehicle_model, vehicleColor: row.vehicle_color, vehicleType: row.vehicle_type, status: row.status, online: Boolean(row.is_online), points: Number(row.points_balance || 0), createdAt: row.created_at }; }
 function addressView(row) { return { display_name: formatAddress(row), lat: Number(row.lat), lon: Number(row.lon) }; }
 function formatAddress(row) { return [row.house_number, row.street, row.suburb, row.city].filter(Boolean).join(", "); }
 
@@ -193,6 +187,17 @@ async function handleApi(request, env, url) {
     const { results } = await db.prepare("SELECT r.*, d.first_name, d.last_name FROM rides r LEFT JOIN drivers d ON d.id=r.driver_id WHERE r.status NOT IN ('completed','cancelled') ORDER BY r.created_at DESC").all();
     return json(results.map(r => ({ id: r.public_id, passenger: r.passenger_name, phone: r.passenger_phone, pickup: r.pickup_address, destination: r.destination_address, driver: r.first_name ? `${r.first_name} ${r.last_name}` : "—", status: r.status, priceDop: r.price_dop, createdAt: r.created_at, contactedAt: r.contacted_at, contactedBy: r.contacted_by, pickupLat: r.pickup_lat, pickupLon: r.pickup_lon, destinationLat: r.destination_lat, destinationLon: r.destination_lon })));
   }
+  if (path.startsWith("/api/contacts/lookup") && method === "GET") {
+      const qPhone = phone(url.searchParams.get("phone"));
+      const profile = await db.prepare("SELECT * FROM profiles WHERE phone=?").bind(qPhone).first();
+      if (!profile) return json({ found: false });
+      const { results: rides } = await db.prepare("SELECT * FROM rides WHERE profile_id=? ORDER BY created_at DESC LIMIT 10").bind(profile.id).all();
+      return json({ found: true, profile: profileView(profile), rides: await Promise.all(rides.map(r => driverRideView(db, r))) });
+  }
+  if (path === "/api/dispatch/clients" && method === "GET") {
+      const { results } = await db.prepare("SELECT * FROM profiles WHERE kind='registered'").all();
+      return json(results.map(profileView));
+  }
 
   if (path === "/api/admin/internal-chat") {
     if (method === "GET") {
@@ -206,6 +211,13 @@ async function handleApi(request, env, url) {
 
   if (path === "/api/admin/chats" && method === "GET") return json({ unreadCount: 0 });
   if (path === "/api/admin/notifications" && method === "GET") return json({ unreadCount: 0, notifications: [] });
+
+  if (path === "/api/rides/estimate" && method === "POST") {
+      const body = await bodyJson(request);
+      const dist = 5.0; // Mock estimate for now if needed, or calculate properly
+      return json({ estimate: { distanceKm: dist, durationMin: 15, priceDop: 250 } });
+  }
+
   if (path === "/api/route") {
       const coords = url.searchParams.get("coordinates");
       const resp = await fetch(`https://router.project-osrm.org/route/v1/driving/${coords}?overview=full&geometries=geojson`);
@@ -217,5 +229,9 @@ async function handleApi(request, env, url) {
 
 async function driverRideView(db, r) {
   const stops = await db.prepare("SELECT * FROM ride_stops WHERE ride_id=? ORDER BY position").bind(r.id).all();
-  return { id: r.public_id, passenger: r.passenger_name, phone: r.passenger_phone, pickup: r.pickup_address, pickupLat: r.pickup_lat, pickupLon: r.pickup_lon, destination: r.destination_address, destinationLat: r.destination_lat, destinationLon: r.destination_lon, status: r.status, priceDop: r.price_dop, stops: stops.results, note: r.note, createdAt: r.created_at };
+  return { id: r.public_id, passenger: r.passenger_name, phone: r.passenger_phone, pickup: r.pickup_address, pickupLat: r.pickup_lat, pickupLon: r.pickup_lon, destination: r.destination_address, destinationLat: r.destination_lat, destinationLon: r.destination_lon, status: r.status, priceDop: r.price_dop, stops: stops.results || [], note: r.note, createdAt: r.created_at };
+}
+
+function dispatchRideView(r) {
+    return { id: r.public_id, passenger: r.passenger_name, phone: r.passenger_phone, pickup: r.pickup_address, destination: r.destination_address, driver: r.first_name ? `${r.first_name} ${r.last_name}` : "—", status: r.status, priceDop: r.price_dop, createdAt: r.created_at, contactedAt: r.contacted_at, contactedBy: r.contacted_by };
 }
