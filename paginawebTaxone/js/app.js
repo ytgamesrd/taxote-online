@@ -1242,7 +1242,7 @@ function tripRowMarkup(trip, isNew = false) {
     driver_arriving: "Conductor en camino",
     arrived: "Conductor llegó",
     in_progress: "En viaje",
-    completed: "Completado",
+    completed: "Terminado",
     cancelled: "Cancelado"
   };
   const status = statusLabels[trip.status] ? trip.status : "pending";
@@ -1268,7 +1268,7 @@ function tripRowMarkup(trip, isNew = false) {
     <td><span class="status-chip status-${status}">${statusLabels[status]}</span></td>
     <td>${escapeHtml(trip.passenger || "--")}</td>
     <td>${escapeHtml(trip.phone || "--")}</td>
-    <td>${escapeHtml(trip.driver || "Pendiente de TAXOTE Driver")}</td>
+    <td>${escapeHtml(trip.driver || "—")}</td>
     <td><span class="trip-address">${escapeHtml(trip.pickup || trip.route?.[0] || "--")}</span></td>
     <td><span class="trip-address">${escapeHtml(trip.destination || trip.route?.[trip.route.length - 1] || "--")}</span></td>
     <td class="trip-date">${dateLabel}</td>
@@ -1288,6 +1288,127 @@ async function markTripContacted(tripId) {
         showToast(error.message);
     }
 }
+
+function viewTripDetails(tripId) {
+    const trip = allTrips().find(t => t.id === tripId);
+    if (!trip) return showToast("No se encontró el viaje.");
+
+    const panel = $("#trip-details-panel");
+    const mainForm = $("#booking-form-content");
+    const content = $("#trip-details-content");
+
+    $("#details-trip-id").textContent = trip.id;
+    const earnings = formatPriceDop(trip.priceDop * 0.85);
+
+    content.innerHTML = \`
+        <div style="display:flex; flex-direction:column; gap:20px;">
+            <div style="background:#f1f5f9; padding:15px; border-radius:15px; border:1px solid #e2e8f0;">
+                <small style="color:#64748b; font-weight:700; text-transform:uppercase; font-size:10px;">Información del Pasajero</small>
+                <div style="font-size:18px; font-weight:900; color:#0f172a; margin-top:5px;">\${escapeHtml(trip.passenger)}</div>
+                <div style="font-size:14px; color:#64748b; font-weight:600;">📞 \${escapeHtml(trip.phone)}</div>
+            </div>
+
+            <div style="display:grid; gap:12px;">
+                <div style="position:relative; padding-left:25px;">
+                    <div style="position:absolute; left:4px; top:6px; width:12px; height:12px; border-radius:50%; background:#000; border:2.5px solid #fff;"></div>
+                    <small style="color:#94a3b8; font-weight:800; font-size:9px;">RECOGIDA (A)</small>
+                    <div style="font-size:13px; font-weight:500;">\${escapeHtml(trip.pickup)}</div>
+                </div>
+                <div style="position:relative; padding-left:25px; border-left:2px dashed #cbd5e1; margin-left:9px; padding-bottom:5px; padding-top:5px;">
+                     <div style="position:absolute; left:-7px; top:12px; width:10px; height:10px; border-radius:50%; background:#1e88e5; border:2px solid #fff;"></div>
+                     <small style="color:#94a3b8; font-weight:800; font-size:9px;">DESTINO (B)</small>
+                     <div style="font-size:13px; font-weight:500;">\${escapeHtml(trip.destination)}</div>
+                </div>
+            </div>
+
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+                <div style="background:#f0fdf4; padding:12px; border-radius:12px; border:1px solid #dcfce7;">
+                    <small style="color:#166534; font-weight:800; font-size:9px;">GANANCIA</small>
+                    <div style="font-size:20px; font-weight:900; color:#15803d;">\${earnings}</div>
+                </div>
+                <div style="background:#fff7ed; padding:12px; border-radius:12px; border:1px solid #ffedd5;">
+                    <small style="color:#9a3412; font-weight:800; font-size:9px;">TARIFA TOTAL</small>
+                    <div style="font-size:20px; font-weight:900; color:#c2410c;">\${formatPriceDop(trip.priceDop)}</div>
+                </div>
+            </div>
+
+            <div style="background:#f8fafc; padding:15px; border-radius:15px; border:1px solid #f1f5f9;">
+                <small style="color:#64748b; font-weight:700; text-transform:uppercase; font-size:10px;">Conductor Asignado</small>
+                <div style="font-size:15px; font-weight:800; color:#334155; margin-top:5px;">\${escapeHtml(trip.driver || "—")}</div>
+            </div>
+        </div>
+    \`;
+
+    mainForm.style.display = "none";
+    panel.style.display = "flex";
+
+    if (map) {
+        markerLayer.clearLayers();
+        const points = [];
+        if (trip.pickupLat) points.push([trip.pickupLat, trip.pickupLon]);
+        if (trip.destinationLat) points.push([trip.destinationLat, trip.destinationLon]);
+        if (points.length > 0) {
+            map.fitBounds(L.latLngBounds(points), {padding: [80, 80]});
+            L.polyline(points, {color: '#1e88e5', weight: 4, dashArray: '5, 10'}).addTo(markerLayer);
+        }
+    }
+}
+
+async function adminLogout() {
+    if(confirm("¿Seguro que deseas cerrar la sesión administrativa?")) {
+        document.cookie = "taxote_admin_session=; Path=/; Expires=Thu, 01 Jan 1970 00:00:01 GMT;";
+        location.href = "/admin-login.html";
+    }
+}
+
+async function loadInternalChat() {
+    const body = $("#internal-chat-body");
+    try {
+        const data = await fetchJson("/api/admin/internal-chat");
+        const messages = data.messages || [];
+        body.innerHTML = '<div class="welcome-msg">Bienvenido a TAXOTE 👋<br>Estamos aquí para ayudarte. Escribe tu mensaje para comenzar.</div>';
+        messages.forEach(m => {
+            const el = document.createElement("div");
+            el.className = \`msg \${m.sender === 'admin' ? 'msg-admin' : 'msg-other'}\`;
+            el.textContent = m.message;
+            body.appendChild(el);
+        });
+        body.scrollTop = body.scrollHeight;
+    } catch (e) { console.error(e); }
+}
+
+$("#send-internal-chat")?.addEventListener("click", async () => {
+    const input = $("#internal-chat-input");
+    const message = input.value.trim();
+    if (!message) return;
+    try {
+        await fetchJson("/api/admin/internal-chat", { method: "POST", body: { message } });
+        input.value = "";
+        loadInternalChat();
+    } catch (e) { showToast(e.message); }
+});
+
+function toggleChat(type) {
+    const whatsappPanel = $("#whatsapp-panel");
+    const internalPanel = $("#internal-chat-panel");
+    if (type === 'whatsapp') {
+        whatsappPanel.style.display = whatsappPanel.style.display === 'flex' ? 'none' : 'flex';
+        internalPanel.style.display = 'none';
+        $("#whatsapp-unread").hidden = true;
+    } else {
+        internalPanel.style.display = internalPanel.style.display === 'flex' ? 'none' : 'flex';
+        whatsappPanel.style.display = 'none';
+        $("#chat-unread").hidden = true;
+        if (internalPanel.style.display === 'flex') loadInternalChat();
+    }
+}
+
+$("#btn-whatsapp-toggle")?.addEventListener("click", () => toggleChat('whatsapp'));
+$("#btn-chat-toggle")?.addEventListener("click", () => toggleChat('internal'));
+$("#close-trip-details")?.addEventListener("click", () => {
+    $("#trip-details-panel").style.display = "none";
+    $("#booking-form-content").style.display = "block";
+});
 
 const tripFilterControls = {
   global: $("#trip-search"),
@@ -1679,6 +1800,136 @@ async function adminLogout() {
         document.cookie = "taxote_admin_session=; Path=/; Expires=Thu, 01 Jan 1970 00:00:01 GMT;";
         location.href = "/admin-login.html";
     }
+}
+
+// REDIRECCIÓN SI NO HAY SESIÓN (Recordando URL)
+(function checkAdminAuth() {
+    if (!document.cookie.includes("taxote_admin_session")) {
+        const next = encodeURIComponent(window.location.pathname + window.location.search);
+        window.location.href = `/admin-login.html?next=${next}`;
+    }
+})();
+
+function toggleChat(type) {
+    const whatsappPanel = $("#whatsapp-panel");
+    const internalPanel = $("#internal-chat-panel");
+
+    if (type === 'whatsapp') {
+        whatsappPanel.style.display = whatsappPanel.style.display === 'flex' ? 'none' : 'flex';
+        internalPanel.style.display = 'none';
+        $("#whatsapp-unread").hidden = true;
+    } else {
+        internalPanel.style.display = internalPanel.style.display === 'flex' ? 'none' : 'flex';
+        whatsappPanel.style.display = 'none';
+        $("#chat-unread").hidden = true;
+        if (internalPanel.style.display === 'flex') loadInternalChat();
+    }
+}
+
+async function loadInternalChat() {
+    const body = $("#internal-chat-body");
+    try {
+        const data = await fetchJson("/api/admin/internal-chat");
+        const messages = data.messages || [];
+        body.innerHTML = '<div class="welcome-msg">Bienvenido a TAXOTE 👋<br>Estamos aquí para ayudarte. Escribe tu mensaje para comenzar.</div>';
+        messages.forEach(m => {
+            const el = document.createElement("div");
+            el.className = `msg ${m.sender === 'admin' ? 'msg-admin' : 'msg-other'}`;
+            el.textContent = m.message;
+            body.appendChild(el);
+        });
+        body.scrollTop = body.scrollHeight;
+    } catch (e) { console.error(e); }
+}
+
+$("#send-internal-chat")?.addEventListener("click", async () => {
+    const input = $("#internal-chat-input");
+    const message = input.value.trim();
+    if (!message) return;
+    try {
+        await fetchJson("/api/admin/internal-chat", { method: "POST", body: { message } });
+        input.value = "";
+        loadInternalChat();
+    } catch (e) { showToast(e.message); }
+});
+
+$("#btn-whatsapp-toggle")?.addEventListener("click", () => toggleChat('whatsapp'));
+$("#btn-chat-toggle")?.addEventListener("click", () => toggleChat('internal'));
+
+function viewTripDetails(tripId) {
+    const trip = allTrips().find(t => t.id === tripId);
+    if (!trip) return showToast("No se encontró el viaje.");
+
+    const panel = $("#trip-details-panel");
+    const mainContent = $("#booking-form-content");
+    const content = $("#trip-details-content");
+
+    $("#details-trip-id").textContent = trip.id;
+
+    // Simulación de datos extendidos (usando lo que ya tiene el objeto trip)
+    const earnings = formatPriceDop(trip.priceDop * 0.85); // Ejemplo 15% comisión
+
+    content.innerHTML = `
+        <div style="display:flex; flex-direction:column; gap:20px;">
+            <div style="background:#f1f5f9; padding:15px; border-radius:15px; border:1px solid #e2e8f0;">
+                <small style="color:#64748b; font-weight:700; text-transform:uppercase; font-size:10px;">Información del Pasajero</small>
+                <div style="font-size:18px; font-weight:900; color:#0f172a; margin-top:5px;">${escapeHtml(trip.passenger)}</div>
+                <div style="font-size:14px; color:#64748b; font-weight:600;">📞 ${escapeHtml(trip.phone)}</div>
+            </div>
+
+            <div style="display:grid; gap:12px;">
+                <div style="position:relative; padding-left:25px;">
+                    <div style="position:absolute; left:4px; top:6px; width:12px; height:12px; border-radius:50%; background:#000; border:2.5px solid #fff; box-shadow:0 0 0 1px #000;"></div>
+                    <small style="color:#94a3b8; font-weight:800; font-size:9px;">RECOGIDA (A)</small>
+                    <div style="font-size:13px; font-weight:500;">${escapeHtml(trip.pickup)}</div>
+                </div>
+                <div style="position:relative; padding-left:25px; border-left:2px dashed #cbd5e1; margin-left:9px; padding-bottom:5px; padding-top:5px;">
+                     <div style="position:absolute; left:-7px; top:12px; width:10px; height:10px; border-radius:50%; background:#1e88e5; border:2px solid #fff; box-shadow:0 0 0 1px #1e88e5;"></div>
+                     <small style="color:#94a3b8; font-weight:800; font-size:9px;">DESTINO (B)</small>
+                     <div style="font-size:13px; font-weight:500;">${escapeHtml(trip.destination)}</div>
+                </div>
+            </div>
+
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+                <div style="background:#f0fdf4; padding:12px; border-radius:12px; border:1px solid #dcfce7;">
+                    <small style="color:#166534; font-weight:800; font-size:9px;">GANANCIA</small>
+                    <div style="font-size:20px; font-weight:900; color:#15803d;">${earnings}</div>
+                </div>
+                <div style="background:#fff7ed; padding:12px; border-radius:12px; border:1px solid #ffedd5;">
+                    <small style="color:#9a3412; font-weight:800; font-size:9px;">TARIFA TOTAL</small>
+                    <div style="font-size:20px; font-weight:900; color:#c2410c;">${formatPriceDop(trip.priceDop)}</div>
+                </div>
+            </div>
+
+            <div style="background:#f8fafc; padding:15px; border-radius:15px; border:1px solid #f1f5f9;">
+                <small style="color:#64748b; font-weight:700; text-transform:uppercase; font-size:10px;">Conductor Asignado</small>
+                <div style="font-size:15px; font-weight:800; color:#334155; margin-top:5px;">${escapeHtml(trip.driver || "Buscando chofer...")}</div>
+                <div style="font-size:12px; color:#94a3b8;">${trip.vehiclePlate || "Placa: --"} · ${trip.vehicleType || "Taxi"}</div>
+            </div>
+
+            ${trip.note ? `<div style="background:#fefce8; padding:12px; border-radius:10px; border-left:4px solid #eab308; font-style:italic; font-size:12px; color:#854d0e;"><b>Nota:</b> ${escapeHtml(trip.note)}</div>` : ""}
+        </div>
+    `;
+
+    mainContent.style.display = "none";
+    panel.style.display = "flex";
+}
+
+$("#close-trip-details")?.addEventListener("click", () => {
+    $("#trip-details-panel").style.display = "none";
+    $("#booking-form-content").style.display = "block";
+});
+
+async function markTripContacted(tripId) {
+    if(!confirm("¿Deseas marcar este viaje como contactado?")) return;
+    try {
+        await fetchJson(`/api/dispatch/rides/${encodeURIComponent(tripId)}/contacted`, {
+            method: "POST",
+            body: { adminName: "Admin TAXOTE" }
+        });
+        showToast("Viaje marcado correctamente.");
+        await loadDispatchTrips();
+    } catch (e) { showToast(e.message); }
 }
 
 async function loadConnectedDrivers() {

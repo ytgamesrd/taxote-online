@@ -43,7 +43,9 @@
                 });
                 const data = await response.json();
                 if (response.ok) {
-                    location.href = '/';
+                    const urlParams = new URLSearchParams(window.location.search);
+                    const next = urlParams.get('next') || '/';
+                    location.href = next;
                 } else {
                     errorMsg.textContent = data.error || 'Error al iniciar sesión';
                     errorMsg.style.display = 'block';

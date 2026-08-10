@@ -8,9 +8,30 @@
     <link rel="icon" type="image/svg+xml" href="favicon.svg?v=20260806-1" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Outfit:wght@500;600;700&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700;900&family=Outfit:wght@500;600;700;900&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <link rel="stylesheet" href="css/styles.css?v=20260809-106" />
+    <link rel="stylesheet" href="css/styles.css?v=20260810-200" />
+    <style>
+        .chat-floating-container { position: fixed; bottom: 20px; right: 20px; display: flex; gap: 15px; z-index: 5000; }
+        .floating-btn { width: 60px; height: 60px; border-radius: 50%; border: 0; color: #fff; display: grid; place-items: center; cursor: pointer; box-shadow: 0 10px 25px rgba(0,0,0,0.3); transition: 0.3s; position: relative; }
+        .floating-btn:hover { transform: translateY(-5px); }
+        .btn-whatsapp { background: #25d366; }
+        .btn-internal { background: #0b2e47; }
+        .unread-dot { position: absolute; top: 0; right: 0; width: 16px; height: 16px; background: #df5050; border: 3px solid #fff; border-radius: 50%; }
+
+        .chat-panel-popup { position: fixed; bottom: 90px; right: 20px; width: 350px; height: 500px; background: #fff; border-radius: 20px; box-shadow: 0 15px 50px rgba(0,0,0,0.3); z-index: 5001; display: none; flex-direction: column; overflow: hidden; border: 1px solid #eee; }
+        .chat-header { background: #0b2e47; color: #fff; padding: 20px; display: flex; justify-content: space-between; align-items: center; }
+        .chat-header h3 { margin: 0; font-size: 18px; font-weight: 800; }
+        .chat-body { flex: 1; overflow-y: auto; padding: 15px; background: #f0f4f8; display: flex; flex-direction: column; gap: 10px; }
+        .chat-footer { padding: 15px; border-top: 1px solid #eee; display: flex; gap: 10px; }
+        .chat-footer input { flex: 1; padding: 10px; border: 1px solid #ddd; border-radius: 10px; outline: none; }
+        .chat-footer button { padding: 10px 15px; background: #0b2e47; color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+
+        .msg { padding: 10px 14px; border-radius: 15px; max-width: 80%; font-size: 13px; line-height: 1.4; }
+        .msg-admin { align-self: flex-end; background: #0b2e47; color: #fff; border-bottom-right-radius: 2px; }
+        .msg-other { align-self: flex-start; background: #fff; color: #333; border-bottom-left-radius: 2px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
+        .welcome-msg { text-align: center; color: #888; font-size: 12px; margin: 20px 0; }
+    </style>
   </head>
   <body>
     <header class="topbar">
@@ -26,8 +47,8 @@
         <a id="header-chat-link" class="header-icon header-chat-link" href="/drivers-chat.html" aria-label="Chat de conductores" title="Chat de conductores">▤<b id="header-chat-badge" hidden>0</b></a>
         <button id="notification-button" class="header-icon notification" type="button" aria-label="Notificaciones" aria-controls="notification-panel" aria-expanded="false">♟<b id="notification-badge" hidden>0</b></button>
       </div>
-      <section id="notification-panel" class="notification-panel" hidden aria-label="Notificaciones administrativas">
-        <header><div><small>CENTRO DE AVISOS</small><h2>Notificaciones</h2></div><div style="display:flex;gap:10px;"><button id="read-all-notifications" type="button">Marcar leídas</button><button id="close-notifications" type="button" style="background:#df5050;border:2px solid #fff;color:#fff;width:32px;height:32px;border-radius:8px;font-weight:bold;cursor:pointer;display:grid;place-items:center;font-size:20px;">×</button></div></header>
+      <section id="notification-panel" class="notification-panel" hidden>
+        <header><div><small>CENTRO DE AVISOS</small><h2>Notificaciones</h2></div><div style="display:flex;gap:10px;"><button id="read-all-notifications" type="button">Marcar leídas</button><button id="close-notifications" type="button" style="background:#df5050;border:0;color:#fff;width:28px;height:28px;border-radius:6px;font-weight:bold;cursor:pointer;">×</button></div></header>
         <div id="notification-list" class="notification-list"><p class="notification-empty">No tienes avisos pendientes.</p></div>
       </section>
     </header>
@@ -38,7 +59,7 @@
         <a class="drawer-brand" href="#"><span class="brand-mark">T</span><span>TAXOTE</span></a>
         <button id="close-menu" class="close-menu" aria-label="Cerrar menú">×</button>
       </div>
-      <nav class="side-navigation" aria-label="Navegación principal">
+      <nav class="side-navigation">
         <a href="/"><span>＋</span> Nueva reserva</a>
         <a href="/drivers.html"><span>♙</span> Conductores</a>
         <a href="/deposits.html"><span>💰</span> Depósitos</a>
@@ -47,7 +68,7 @@
         <a href="/conversation-history.html"><span>▧</span> Historial de conversación</a>
         <a href="/reports.html"><span>▦</span> Reportes</a>
         <hr style="border: 0; border-top: 1px solid #eee; margin: 10px 0;">
-        <a href="#" onclick="adminLogout()" style="color:#d32f2f"><span>×</span> Cerrar sesión</a>
+        <a href="#" onclick="adminLogout()" style="color:#df5050"><span>×</span> Cerrar sesión</a>
       </nav>
       <div class="side-menu-footer"><p><b>Administrador</b><small>Operaciones TAXOTE</small></p></div>
     </aside>
@@ -78,28 +99,23 @@
             </div>
 
             <div id="schedule-fields" class="form-grid two-cols" hidden>
-              <label class="field">
-                <span>Fecha</span>
-                <input id="schedule-date" type="date" />
-              </label>
-              <label class="field">
-                <span>Hora</span>
-                <input id="schedule-time" type="time" />
-              </label>
+              <label class="field"><span>Fecha</span><input id="schedule-date" type="date" /></label>
+              <label class="field"><span>Hora</span><input id="schedule-time" type="time" /></label>
             </div>
 
             <div class="customer-row customer-picker-wrap">
               <label class="field grow">
                 <span>Cliente registrado</span>
-                <div class="customer-search-control"><span>⌕</span><input id="customer" type="search" placeholder="Buscar por nombre o teléfono" autocomplete="off" /><button id="registered-history-search" type="button" aria-label="Ver historial permanente del cliente" title="Ver viajes anteriores" disabled>⌕</button><button id="clear-customer" type="button" aria-label="Limpiar cliente">×</button></div>
+                <div class="customer-search-control"><span>⌕</span><input id="customer" type="search" placeholder="Buscar por nombre o teléfono" autocomplete="off" /><button id="registered-history-search" type="button" disabled>⌕</button><button id="clear-customer" type="button">×</button></div>
               </label>
               <div id="customer-results" class="customer-results" hidden></div>
             </div>
             <div id="selected-customer" class="selected-customer" hidden></div>
+
             <div id="guest-fields" class="guest-fields" hidden>
-              <div class="field guest-phone-field"><span>Teléfono de República Dominicana</span><div class="guest-phone-lookup"><div class="phone-control"><b>+1</b><input id="guest-phone" type="tel" inputmode="numeric" placeholder="809 000 0000" maxlength="12" autocomplete="tel" /></div><button id="guest-history-search" type="button" aria-label="Buscar nombre y viajes anteriores del teléfono" title="Buscar viajes anteriores">⌕</button></div></div>
+              <div class="field guest-phone-field"><span>Teléfono de República Dominicana</span><div class="guest-phone-lookup"><div class="phone-control"><b>+1</b><input id="guest-phone" type="tel" placeholder="809 000 0000" maxlength="12" /></div><button id="guest-history-search" type="button">⌕</button></div></div>
               <p id="guest-history-status" class="guest-history-status">Escribe el teléfono y toca la lupa.</p>
-              <label class="field guest-name-field"><span>Nombre del invitado</span><input id="guest-name" type="text" placeholder="Nombre y apellido" autocomplete="name" /></label>
+              <label class="field guest-name-field"><span>Nombre del invitado</span><input id="guest-name" type="text" placeholder="Nombre y apellido" /></label>
             </div>
 
             <div class="route-block">
@@ -107,19 +123,19 @@
               <div class="route-fields">
                 <label class="field address-field">
                   <span>Recogida</span>
-                  <div class="address-control pickup-control"><input id="pickup" type="search" placeholder="Calle, sector, municipio o provincia" autocomplete="off" /><button id="search-pickup" type="button" aria-label="Buscar dirección de recogida">⌕</button></div>
+                  <div class="address-control pickup-control"><input id="pickup" type="search" placeholder="Calle, sector..." autocomplete="off" /><button id="search-pickup" type="button">⌕</button></div>
                   <div id="pickup-results" class="address-results" hidden></div>
-                  <button id="pick-pickup-map" class="pick-on-map pickup-pick" type="button"><i></i> Elegir recogida en el mapa</button>
+                  <button id="pick-pickup-map" class="pick-on-map pickup-pick" type="button"><i></i> En el mapa</button>
                 </label>
                 <div id="extra-stops" class="extra-stops"></div>
                 <label class="field address-field">
                   <span>Destino</span>
-                  <div class="address-control destination-control"><input id="destination" type="search" placeholder="Calle, sector, municipio o provincia" autocomplete="off" /><button id="search-destination" type="button" aria-label="Buscar dirección de destino">⌕</button></div>
+                  <div class="address-control destination-control"><input id="destination" type="search" placeholder="Calle, sector..." autocomplete="off" /><button id="search-destination" type="button">⌕</button></div>
                   <div id="destination-results" class="address-results" hidden></div>
-                  <button id="pick-destination-map" class="pick-on-map destination-pick" type="button"><i></i> Elegir destino en el mapa</button>
+                  <button id="pick-destination-map" class="pick-on-map destination-pick" type="button"><i></i> En el mapa</button>
                 </label>
               </div>
-              <button id="add-stop" class="add-stop" type="button" aria-label="Añadir parada">+</button>
+              <button id="add-stop" class="add-stop" type="button">+</button>
             </div>
 
             <div id="address-provider-status" class="address-provider-status" role="status"><i>RD</i><span>Direcciones de República Dominicana</span></div>
@@ -128,33 +144,23 @@
 
             <label class="field full-field">
               <span>Nota para el conductor</span>
-              <input id="dispatch-note" type="text" placeholder="Ej. Recoger en la entrada principal" />
+              <input id="dispatch-note" type="text" placeholder="Instrucciones para el chofer" />
             </label>
 
             <label class="field full-field">
-              <span>Buscar conductor activo u ocupado</span>
+              <span>Asignar conductor</span>
               <div class="driver-search-control">
-                <input id="driver-assign-search" type="search" placeholder="Buscar conductor por nombre, vehículo o estado" autocomplete="off" />
-                <div id="driver-assigned-summary" class="driver-assigned-summary">Sin conductor asignado</div>
+                <input id="driver-assign-search" type="search" placeholder="Buscar conductor..." autocomplete="off" />
+                <div id="driver-assigned-summary" class="driver-assigned-summary">Sin asignar</div>
                 <input id="driver-assign-id" type="hidden" value="" />
               </div>
               <div id="driver-search-results" class="driver-search-results" hidden></div>
-              <small class="field-help">Escribe al menos 2 letras para filtrar conductores activos y ocupados.</small>
             </label>
 
             <div class="form-grid three-cols compact-fields">
-              <label class="field select-field">
-                <span>Pasajeros</span>
-                <select id="passenger-count-select"><option>1 pasajero</option><option>2 pasajeros</option><option>3 pasajeros</option></select>
-              </label>
-              <label class="field select-field">
-                <span>Paradas</span>
-                <select id="stop-count-select"><option value="0">Sin paradas</option><option value="1">1 parada</option><option value="2">2 paradas</option><option value="3">3 paradas</option></select>
-              </label>
-              <label class="field select-field">
-                <span>Pago</span>
-                <select id="payment-method-select"><option>Efectivo</option><option>Tarjeta</option><option>Cuenta empresa</option></select>
-              </label>
+              <label class="field select-field"><span>Pasajeros</span><select id="passenger-count-select"><option>1 pasajero</option><option>2 pasajeros</option><option>3 pasajeros</option></select></label>
+              <label class="field select-field"><span>Paradas</span><select id="stop-count-select"><option value="0">Sin paradas</option><option value="1">1 parada</option><option value="2">2 paradas</option><option value="3">3 paradas</option></select></label>
+              <label class="field select-field"><span>Pago</span><select id="payment-method-select"><option>Efectivo</option><option>Tarjeta</option><option>Cuenta empresa</option></select></label>
             </div>
 
             <div class="form-actions">
@@ -164,7 +170,7 @@
           </form>
         </div>
 
-        <!-- PANEL DE DETALLES DEL VIAJE (OJO) -->
+        <!-- PANEL DE DETALLES DEL VIAJE (AL DARLE AL OJO) -->
         <div id="trip-details-panel" style="position:absolute; inset:0; z-index:100; background:#fff; display:none; flex-direction:column;">
             <div class="panel-heading" style="background:#0b2e47; color:#fff; padding:20px;">
                 <div style="display:flex; align-items:center; gap:15px;">
@@ -173,75 +179,23 @@
                 </div>
             </div>
             <div id="trip-details-content" style="padding:20px; overflow-y:auto; flex:1;">
-                <!-- Dinámico -->
+                <!-- Se llena con JS -->
             </div>
-        </div>
-
-        <div id="booking-confirmation-modal" class="dispatch-modal-overlay" hidden>
-          <section class="dispatch-cancel-card" role="dialog" aria-modal="true" aria-labelledby="booking-confirmation-title">
-            <button id="close-booking-confirmation" class="dispatch-modal-close" type="button" aria-label="Cerrar confirmación">×</button>
-            <div class="dispatch-cancel-heading"><span>✓</span><div><small>CONFIRMAR RESERVA</small><h2 id="booking-confirmation-title">Revisa los detalles del viaje</h2></div></div>
-            <div id="booking-confirmation-content" class="dispatch-cancel-trip">
-              <p><strong>Recogida:</strong> <span id="booking-confirmation-pickup"></span></p>
-              <p><strong>Destino:</strong> <span id="booking-confirmation-destination"></span></p>
-              <p><strong>Paradas:</strong></p>
-              <ul id="booking-confirmation-stops"></ul>
-              <p><strong>Conductor:</strong> <span id="booking-confirmation-driver"></span></p>
-              <p><strong>Servicio:</strong> <span id="booking-confirmation-time"></span></p>
-              <p><strong>Pasajeros:</strong> <span id="booking-confirmation-passengers"></span></p>
-              <p><strong>Pago:</strong> <span id="booking-confirmation-payment"></span></p>
-              <p><strong>Precio estimado:</strong> <span id="booking-confirmation-price"></span></p>
-              <p><strong>Cliente:</strong> <span id="booking-confirmation-customer"></span></p>
-              <p><strong>Nota:</strong> <span id="booking-confirmation-note"></span></p>
-            </div>
-            <div class="dispatch-modal-actions">
-              <button id="cancel-booking" type="button">VOLVER</button>
-              <button id="confirm-booking" class="confirm-dispatch-cancel" type="button"><span>✓</span> CONFIRMAR RESERVA</button>
-            </div>
-          </section>
         </div>
       </aside>
 
-      <section class="map-section" aria-label="Mapa de operaciones">
-        <div class="panel-resize-handle booking-resize-handle" data-resize-panel="booking" role="separator" aria-orientation="vertical" aria-label="Cambiar ancho del panel de reservas" tabindex="0"></div>
-        <div class="panel-resize-handle drivers-resize-handle" data-resize-panel="drivers" role="separator" aria-orientation="vertical" aria-label="Cambiar ancho del panel de conductores" tabindex="0"></div>
+      <section class="map-section">
         <div class="map-card" id="map-card">
           <button class="map-control map-floating-control" id="recenter">⌖ Centrar mapa</button>
-          <div id="live-map" class="live-map" aria-label="Mapa interactivo de República Dominicana"></div>
-          <div class="map-options">
-            <div class="map-options-title">Opciones del mapa</div>
-            <div style="display: flex; flex-direction: column; gap: 8px;">
-              <div style="display: flex; gap: 10px;">
-                <label style="cursor: pointer;"><input id="map-standard" checked type="radio" name="map-style" value="standard" /> Estándar</label>
-                <label style="cursor: pointer;"><input id="map-dark" type="radio" name="map-style" value="dark" /> Modo oscuro</label>
-              </div>
-              <label style="border-top: 1px solid #eee; padding-top: 8px; margin-top: 2px; cursor: pointer; display: flex; align-items: center; gap: 5px;">
-                <input id="map-traffic" type="checkbox" /> <span>Mostrar tráfico (Tiempo real)</span>
-              </label>
-            </div>
-          </div>
+          <div id="live-map" class="live-map"></div>
           <div class="map-legend"><span><i class="legend-line good"></i> Fluido</span><span><i class="legend-line busy"></i> Moderado</span><span><i class="legend-line slow"></i> Lento</span></div>
-          <div class="map-zoom"><button>+</button><button>−</button></div>
-          <div class="map-scale">500 m</div>
         </div>
       </section>
 
       <aside id="drivers-panel" class="drivers-panel">
-        <div class="drivers-heading">
-          <div><h2>Lista de conductores</h2></div>
-        </div>
-        <div class="search-row"><span>⌕</span><input id="connected-driver-search" type="search" placeholder="Buscar conductor" /></div>
-        <div class="driver-tabs">
-          <button class="active" type="button" disabled>Disponibles <b id="available-driver-count">0</b></button>
-          <button type="button" disabled>Ocupados <b id="busy-driver-count">0</b></button>
-        </div>
-        <div id="connected-drivers-list" class="drivers-list" hidden></div>
-        <div id="connected-drivers-empty" class="fleet-empty-state">
-          <span>♙</span>
-          <h3>Sin conductores conectados</h3>
-          <p>Los conductores reales aparecerán aquí cuando se registren e inicien sesión en TAXOTE Driver.</p>
-        </div>
-        <div id="driver-app-status" class="driver-app-status"><i></i> Esperando conexión con TAXOTE Driver</div>
+        <div class="drivers-heading"><h2>Conductores</h2></div>
+        <div class="search-row"><span>⌕</span><input id="connected-driver-search" type="search" placeholder="Buscar..." /></div>
+        <div id="connected-drivers-list" class="drivers-list"></div>
       </aside>
     </main>
 
@@ -250,77 +204,55 @@
         <div><span class="eyebrow">SEGUIMIENTO</span><h2>Viajes activos</h2></div>
         <div class="trip-stats"><span><b id="current-trip-count">0</b> Actuales</span><span><b id="today-trip-count">0</b> Hoy</span></div>
         <div class="trip-search-tools">
-          <label class="trip-global-search"><span>⌕</span><input id="trip-search" type="search" placeholder="Buscar en todos los viajes" aria-label="Buscar en todos los viajes" /></label>
-          <span id="filtered-trip-count" class="filtered-trip-count">0 resultados</span>
-          <button id="clear-trip-filters" class="clear-trip-filters" type="button">Limpiar filtros</button>
-          <button id="refresh-trips" class="refresh-trips" type="button" aria-label="Actualizar viajes" title="Actualizar viajes">↻</button>
+          <label class="trip-global-search"><span>⌕</span><input id="trip-search" type="search" placeholder="Buscar..." /></label>
+          <button id="refresh-trips" class="refresh-trips">↻</button>
         </div>
       </div>
       <div class="trip-table-wrap">
         <table>
           <thead>
-            <tr class="trip-column-headings"><th>Acciones</th><th>Viaje</th><th>Estado</th><th>Pasajero</th><th>Teléfono</th><th>Conductor</th><th>Contactado</th><th>Recogida</th><th>Destino</th><th>Fecha y hora</th></tr>
-            <tr class="trip-filter-row">
-              <th><span class="filter-action-label">Acción</span></th>
-              <th><input id="filter-trip-id" type="search" placeholder="Código…" aria-label="Filtrar por código de viaje" /></th>
-              <th><select id="filter-trip-status" aria-label="Filtrar por estado"><option value="">Todos los estados</option><option value="pending">Pendiente</option><option value="accepted">Aceptado</option><option value="driver_arriving">Conductor en camino</option><option value="arrived">Conductor llegó</option><option value="in_progress">En viaje</option></select></th>
-              <th><input id="filter-trip-passenger" type="search" placeholder="Nombre…" aria-label="Filtrar por pasajero" /></th>
-              <th><input id="filter-trip-phone" type="search" inputmode="tel" placeholder="Teléfono…" aria-label="Filtrar por teléfono" /></th>
-              <th><input id="filter-trip-driver" type="search" placeholder="Conductor…" aria-label="Filtrar por conductor" /></th>
-              <th>-</th>
-              <th><input id="filter-trip-pickup" type="search" placeholder="Recogida…" aria-label="Filtrar por dirección de recogida" /></th>
-              <th><input id="filter-trip-destination" type="search" placeholder="Destino…" aria-label="Filtrar por dirección de destino" /></th>
-              <th><select id="filter-trip-date" aria-label="Filtrar por fecha"><option value="">Cualquier fecha</option><option value="today">Hoy</option><option value="7days">Últimos 7 días</option><option value="30days">Últimos 30 días</option></select></th>
-            </tr>
+            <tr class="trip-column-headings"><th>Acción</th><th>Viaje</th><th>Estado</th><th>Pasajero</th><th>Teléfono</th><th>Conductor</th><th>Contactado</th><th>Recogida</th><th>Destino</th><th>Hora</th></tr>
           </thead>
-          <tbody id="trip-table-body">
-            <tr id="empty-trips-row"><td colspan="10" class="empty-trips">Los viajes nuevos aparecerán aquí cuando sean creados.</td></tr>
-          </tbody>
+          <tbody id="trip-table-body"></tbody>
         </table>
       </div>
     </section>
 
-    <div id="dispatch-cancel-modal" class="dispatch-modal-overlay" hidden>
-      <section class="dispatch-cancel-card" role="dialog" aria-modal="true" aria-labelledby="dispatch-cancel-title">
-        <button id="close-dispatch-cancel" class="dispatch-modal-close" type="button" aria-label="Cerrar cancelación">×</button>
-        <div class="dispatch-cancel-heading"><span>×</span><div><small>CANCELACIÓN DESDE LA CENTRAL</small><h2 id="dispatch-cancel-title">Cancelar servicio</h2></div></div>
-        <p id="dispatch-cancel-trip" class="dispatch-cancel-trip"></p>
-        <p class="dispatch-cancel-help">Selecciona el motivo. La cancelación se aplicará inmediatamente y quedará registrada.</p>
-        <form id="dispatch-cancel-form">
-          <fieldset class="dispatch-cancel-reasons">
-            <legend>Motivo de cancelación</legend>
-            <label><input type="radio" name="dispatch-cancel-reason" value="El cliente solicitó cancelar" /><span>El cliente solicitó cancelar</span></label>
-            <label><input type="radio" name="dispatch-cancel-reason" value="Solicitud duplicada" /><span>Solicitud duplicada</span></label>
-            <label><input type="radio" name="dispatch-cancel-reason" value="Me equivoqué en la dirección" /><span>Dirección incorrecta</span></label>
-            <label><input type="radio" name="dispatch-cancel-reason" value="Pasajero no se presentó" /><span>Pasajero no se presentó</span></label>
-            <label><input type="radio" name="dispatch-cancel-reason" value="No hay conductores disponibles" /><span>No hay conductores disponibles</span></label>
-            <label><input type="radio" name="dispatch-cancel-reason" value="Tuve una emergencia" /><span>Emergencia del pasajero</span></label>
-            <label><input type="radio" name="dispatch-cancel-reason" value="Error de la central" /><span>Error de la central</span></label>
-            <label><input type="radio" name="dispatch-cancel-reason" value="Otro motivo" /><span>Otro motivo</span></label>
-          </fieldset>
-          <label class="dispatch-cancel-note"><span>Comentario opcional</span><textarea id="dispatch-cancel-note" maxlength="300" placeholder="Añade información para el historial del servicio"></textarea></label>
-          <div class="dispatch-modal-actions"><button id="back-dispatch-cancel" type="button">VOLVER</button><button id="confirm-dispatch-cancel" class="confirm-dispatch-cancel" type="submit"><span>×</span> CANCELAR SERVICIO</button></div>
-        </form>
-      </section>
+    <!-- CHAT FLOATING BUTTONS -->
+    <div class="chat-floating-container">
+        <button class="floating-btn btn-whatsapp" id="btn-whatsapp-toggle" title="WhatsApp Chat">
+            <svg width="30" height="30" viewBox="0 0 24 24" fill="currentColor"><path d="M12.031 6.172c-2.32 0-4.525.903-6.163 2.541s-2.541 3.843-2.541 6.163c0 1.148.225 2.275.669 3.32l-.703 2.569 2.628-.689c1.011.5 2.119.764 3.242.764h.003c2.32 0 4.525-.903 6.163-2.541s2.541-3.843 2.541-6.163c0-2.32-.903-4.525-2.541-6.163s-3.843-2.541-6.163-2.541zm0 13.626h-.003c-1.025 0-2.03-.263-2.923-.761l-.21-.118-2.176.569.578-2.109-.13-.207c-.543-.865-.829-1.87-.829-2.903 0-3.003 2.443-5.447 5.447-5.447 1.455 0 2.822.567 3.851 1.596s1.596 2.396 1.596 3.851-2.443 5.447-5.447 5.447z"/></svg>
+            <div id="whatsapp-unread" class="unread-dot" hidden></div>
+        </button>
+        <button class="floating-btn btn-internal" id="btn-chat-toggle" title="TAXOTE Chat">
+            <span style="font-size:24px;">💬</span>
+            <div id="chat-unread" class="unread-dot" hidden></div>
+        </button>
     </div>
 
-    <div id="phone-history-modal" class="dispatch-modal-overlay" hidden>
-      <section class="phone-history-card" role="dialog" aria-modal="true" aria-labelledby="phone-history-title">
-        <button id="close-phone-history" class="dispatch-modal-close" type="button" aria-label="Cerrar viajes recientes">×</button>
-        <div class="phone-history-heading"><div><small>HISTORIAL POR TELÉFONO</small><h2 id="phone-history-title">Viajes recientes</h2></div><span id="phone-history-count">0 viajes</span></div>
-        <p id="phone-history-person" class="phone-history-person"></p>
-        <div class="phone-history-table-wrap">
-          <table>
-            <thead><tr><th>Fecha</th><th>Teléfono</th><th>Recogida</th><th>Destino</th><th></th></tr></thead>
-            <tbody id="phone-history-body"><tr><td colspan="5" class="phone-history-empty">Buscando viajes…</td></tr></tbody>
-          </table>
+    <!-- WHATSAPP PANEL -->
+    <div id="whatsapp-panel" class="chat-panel-popup">
+        <div class="chat-header"><h3>WhatsApp Chat</h3><button onclick="toggleChat('whatsapp')" style="background:none;border:0;color:#fff;font-size:20px;cursor:pointer;">×</button></div>
+        <div class="chat-body" id="whatsapp-chat-body">
+            <div class="welcome-msg">Cargando conversaciones...</div>
         </div>
-        <div class="phone-history-actions"><button id="dismiss-phone-history" type="button">Cerrar</button></div>
-      </section>
+        <div class="chat-footer"><input type="text" placeholder="Escribe un mensaje..."><button>➤</button></div>
     </div>
 
-    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    <!-- INTERNAL TAXOTE CHAT PANEL -->
+    <div id="internal-chat-panel" class="chat-panel-popup">
+        <div class="chat-header"><h3>TAXOTE Chat</h3><button onclick="toggleChat('internal')" style="background:none;border:0;color:#fff;font-size:20px;cursor:pointer;">×</button></div>
+        <div class="chat-body" id="internal-chat-body">
+            <div class="welcome-msg">Bienvenido a TAXOTE 👋<br>Estamos aquí para ayudarte. Escribe tu mensaje para comenzar.</div>
+        </div>
+        <div class="chat-footer">
+            <input type="text" id="internal-chat-input" placeholder="¿En qué podemos ayudarte?">
+            <button id="send-internal-chat">➤</button>
+        </div>
+    </div>
+
+    <div id="toast" class="toast"></div>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <script src="js/app.js?v=20260810-131"></script>
+    <script src="js/app.js?v=20260810-200"></script>
   </body>
 </html>

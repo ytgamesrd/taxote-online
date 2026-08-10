@@ -61,9 +61,10 @@ function renderDrivers(){
             <td><span class="plate-chip">${escapeHtml(driver.vehiclePlate)}</span></td>
             <td><span class="status-badge status-${driver.status}">${statusLabels[driver.status] || driver.status}</span></td>
             <td>${escapeHtml(dateLabel(driver.createdAt))}</td>
-            <td style="display:flex;gap:5px;">
+            <td style="display:flex;gap:5px;align-items:center;">
                 <button class="view-driver" type="button" onclick="event.stopPropagation(); openDriver('${escapeHtml(driver.id)}')">Ver</button>
                 <button class="view-driver" type="button" style="background:#0b2e47;color:#fff;" onclick="event.stopPropagation(); editDriver('${escapeHtml(driver.id)}')">Editar</button>
+                <a href="/drivers-chat.html?driver=${encodeURIComponent(driver.id)}" style="text-decoration:none;font-size:18px;" title="Chatear con ${escapeHtml(driver.name)}">💬</a>
             </td>
         </tr>
     `).join("");
