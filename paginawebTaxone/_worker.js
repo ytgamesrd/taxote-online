@@ -54,7 +54,7 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url), db = env.taxote_db;
     if (url.pathname === "/api/whatsapp/webhook") return postWhatsApp(request, env);
-    if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders() });
+    if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders(request) });
     try {
       if (!db) throw new HttpError(503, "Base de datos no vinculada.");
       await ensureSchema(db);
@@ -65,7 +65,7 @@ export default {
         const body = await bodyJson(request);
         if (body.username === "TAXOTEadmin1995" && body.password === "123Taxote123@1995") {
           const token = id("ADM"), expires = new Date(); expires.setHours(23, 59, 59, 999);
-          return json({ ok: true, token }, 200, { "Set-Cookie": `taxote_admin_session=${token}; Path=/; Secure; SameSite=Lax; Expires=${expires.toUTCString()}` });
+          return json({ ok: true, token }, 200, { "Set-Cookie": `taxote_admin_session=${token}; Path=/; Secure; SameSite=Lax; Expires=${expires.toUTCString()}`, "Access-Control-Allow-Origin": url.origin, "Access-Control-Allow-Credentials": "true" });
         }
         throw new HttpError(401, "Usuario o contraseña de administrador incorrectos.");
       }
@@ -91,15 +91,32 @@ export default {
     } catch (error) {
       const status = error instanceof HttpError ? error.status : 500;
       console.error("TAXOTE API ERROR:", error);
-      return json({ error: error.message || "Ocurrió un error interno." }, status);
+      return json({ error: error.message || "Ocurrió un error interno." }, status, { "Access-Control-Allow-Origin": url.origin, "Access-Control-Allow-Credentials": "true" });
     }
   }
 };
 
 class HttpError extends Error { constructor(status, message) { super(message); this.status = status; } }
 async function ensureSchema(db) { if (!schemaReady) { await db.batch(CORE_SCHEMA.map(s => db.prepare(s))); schemaReady = true; } }
-function corsHeaders() { return { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods": "GET,POST,DELETE,PATCH,OPTIONS", "Access-Control-Allow-Headers": "Content-Type,Accept", "Cache-Control": "no-store", "Access-Control-Allow-Credentials": "true" }; }
-function json(data, status = 200, extra = {}) { return new Response(JSON.stringify(data), { status, headers: { "Content-Type": "application/json; charset=UTF-8", ...corsHeaders(), ...extra } }); }
+
+function corsHeaders(request) {
+  const origin = request.headers.get("Origin") || "*";
+  return {
+    "Access-Control-Allow-Origin": origin,
+    "Access-Control-Allow-Methods": "GET,POST,DELETE,PATCH,OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type,Accept",
+    "Access-Control-Allow-Credentials": "true",
+    "Cache-Control": "no-store"
+  };
+}
+
+function json(data, status = 200, extraHeaders = {}) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { "Content-Type": "application/json; charset=UTF-8", ...extraHeaders }
+  });
+}
+
 async function bodyJson(req) { try { return await req.json(); } catch { throw new HttpError(400, "JSON inválido."); } }
 function nowIso() { return new Date().toISOString(); }
 function id(prefix) { return `${prefix}-${crypto.randomUUID().split("-")[0].toUpperCase()}`; }
@@ -116,26 +133,31 @@ async function createSession(db, t, o, idVal) { const tok = `${crypto.randomUUID
 async function userSession(req, db) { const t = parseCookies(req).taxote_user_session; if (!t) return null; return db.prepare(`SELECT p.* FROM sessions s JOIN profiles p ON p.id=s.profile_id WHERE s.token_hash=? AND s.expires_at>?`).bind(await sha256(t), nowIso()).first(); }
 async function driverSession(req, db) { const t = parseCookies(req).taxote_driver_session; if (!t) return null; return db.prepare(`SELECT d.* FROM driver_sessions s JOIN drivers d ON d.id=s.driver_id WHERE s.token_hash=? AND s.expires_at>?`).bind(await sha256(t), nowIso()).first(); }
 
-function profileView(row) { return { id: row.public_id, name: row.name, phone: row.phone, email: row.email || "", kind: row.kind }; }
+function driverView(row, detailed = false) {
+  const v = { id: row.public_id, name: `${row.first_name} ${row.last_name}`.trim(), phone: row.phone, email: row.email, vehiclePlate: row.vehicle_plate, vehicleBrand: row.vehicle_brand, vehicleModel: row.vehicle_model, vehicleColor: row.vehicle_color, vehicleType: row.vehicle_type, status: row.status, online: Boolean(row.is_online), points: Number(row.points_balance || 0), createdAt: row.created_at };
+  if (detailed) v.documents = { selfie: documentUrl(row.public_id, "selfie"), idFront: documentUrl(row.public_id, "idFront"), vehicle: documentUrl(row.public_id, "vehicle") };
+  return v;
+}
 function documentUrl(idVal, k) { return `/api/admin/drivers/${encodeURIComponent(idVal)}/document/${encodeURIComponent(k)}`; }
-function driverView(row) { return { id: row.public_id, name: `${row.first_name} ${row.last_name}`.trim(), phone: row.phone, email: row.email, vehiclePlate: row.vehicle_plate, vehicleBrand: row.vehicle_brand, vehicleModel: row.vehicle_model, vehicleColor: row.vehicle_color, vehicleType: row.vehicle_type, status: row.status, online: Boolean(row.is_online), points: Number(row.points_balance || 0), createdAt: row.created_at }; }
-function addressView(row) { return { display_name: formatAddress(row), lat: Number(row.lat), lon: Number(row.lon) }; }
+function addressView(row) { return { display_name: formatAddress(row), lat: Number(row.lat), lon: Number(row.lon), id: row.place_id || String(row.id) }; }
 function formatAddress(row) { return [row.house_number, row.street, row.suburb, row.city].filter(Boolean).join(", "); }
 
 async function handleApi(request, env, url) {
   const db = env.taxote_db, path = url.pathname.replace(/\/$/, ""), method = request.method;
-  if (path === "/api/health") return json({ ok: true });
-  if (path === "/api/maps-status") return json({ googleConfigured: false, provider: "OSM" });
+  const commonHeaders = { "Access-Control-Allow-Origin": url.origin, "Access-Control-Allow-Credentials": "true" };
+
+  if (path === "/api/health") return json({ ok: true }, 200, commonHeaders);
+  if (path === "/api/maps-status") return json({ googleConfigured: false, provider: "OSM" }, 200, commonHeaders);
 
   if (path === "/api/geocode" && method === "GET") {
-    const q = clean(url.searchParams.get("q")); if (q.length < 2) return json([]);
+    const q = clean(url.searchParams.get("q")); if (q.length < 2) return json([], 200, commonHeaders);
     const { results } = await db.prepare("SELECT * FROM addresses WHERE name LIKE ? OR street LIKE ? LIMIT 10").bind(`%${q}%`, `%${q}%`).all();
-    return json(results.map(addressView));
+    return json(results.map(addressView), 200, commonHeaders);
   }
   if (path === "/api/reverse" && method === "GET") {
     const lat = safeNumber(url.searchParams.get("lat"), "Lat"), lon = safeNumber(url.searchParams.get("lon"), "Lon");
     const row = await db.prepare("SELECT * FROM addresses ORDER BY ((lat-?)*(lat-?)+(lon-?)*(lon-?)) LIMIT 1").bind(lat, lat, lon, lon).first();
-    return row ? json(addressView(row)) : json({ error: "No encontrada" }, 404);
+    return row ? json(addressView(row), 200, commonHeaders) : json({ error: "No encontrada" }, 404, commonHeaders);
   }
 
   // Driver Auth
@@ -143,7 +165,7 @@ async function handleApi(request, env, url) {
     const body = await bodyJson(request);
     const salt = crypto.randomUUID(), hash = await passwordHash(body.password, salt), stamp = nowIso(), publicId = id("DRV");
     await db.prepare(`INSERT INTO drivers(public_id,first_name,last_name,email,phone,password_hash,password_salt,cedula,vehicle_type,vehicle_brand,vehicle_model,vehicle_color,vehicle_plate,payment_method,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,'pending',?,?)`).bind(publicId, clean(body.firstName), clean(body.lastName), clean(body.email).toLowerCase(), phone(body.phone), hash, salt, clean(body.cedula), clean(body.vehicleType), clean(body.vehicleBrand), clean(body.vehicleModel), clean(body.vehicleColor), clean(body.vehiclePlate).toUpperCase(), clean(body.paymentMethod), stamp, stamp).run();
-    return json({ ok: true, driverId: publicId }, 201);
+    return json({ ok: true, driverId: publicId }, 201, commonHeaders);
   }
   if (path === "/api/driver/login" && method === "POST") {
     const body = await bodyJson(request);
@@ -151,12 +173,12 @@ async function handleApi(request, env, url) {
     if (!driver || await passwordHash(body.password, driver.password_salt) !== driver.password_hash) throw new HttpError(401, "Credenciales incorrectas.");
     if (driver.status !== "active") throw new HttpError(403, "Cuenta no activa.");
     const token = await createSession(db, "driver_sessions", "driver_id", driver.id);
-    return json({ ok: true, driver: driverView(driver) }, 200, { "Set-Cookie": `taxote_driver_session=${token}; Path=/; Secure; SameSite=Lax; HttpOnly; Max-Age=${SESSION_DAYS * 86400}` });
+    return json({ ok: true, driver: driverView(driver) }, 200, { "Set-Cookie": `taxote_driver_session=${token}; Path=/; Secure; SameSite=Lax; HttpOnly; Max-Age=${SESSION_DAYS * 86400}`, ...commonHeaders });
   }
   if ((path === "/api/driver/status" || path === "/api/driver/me") && method === "GET") {
     const driver = await driverSession(request, db);
     if (!driver) throw new HttpError(401, "Sesión expirada.");
-    return json({ ok: true, driver: driverView(driver) });
+    return json({ ok: true, driver: driverView(driver) }, 200, commonHeaders);
   }
 
   // Driver Actions
@@ -164,64 +186,63 @@ async function handleApi(request, env, url) {
     const driver = await driverSession(request, db); if (!driver) throw new HttpError(401, "Sesión expirada.");
     const body = await bodyJson(request), lat = safeNumber(body.lat, "Lat"), lon = safeNumber(body.lon, "Lon"), stamp = nowIso();
     await db.prepare("UPDATE drivers SET current_lat=?, current_lon=?, current_bearing=?, last_seen_at=?, is_online=1, updated_at=? WHERE id=?").bind(lat, lon, Number(body.bearing || 0), stamp, stamp, driver.id).run();
-    return json({ ok: true });
+    return json({ ok: true }, 200, commonHeaders);
   }
   if (path === "/api/driver/work" && method === "GET") {
     const driver = await driverSession(request, db); if (!driver) throw new HttpError(401, "Sesión expirada.");
     const active = await db.prepare("SELECT * FROM rides WHERE driver_id=? AND status NOT IN ('completed','cancelled') LIMIT 1").bind(driver.id).first();
     const { results: offers } = await db.prepare("SELECT * FROM rides WHERE status='pending' AND (driver_id IS NULL OR driver_id=?) LIMIT 5").bind(driver.id).all();
-    return json({ activeRide: active ? await driverRideView(db, active) : null, offers: await Promise.all(offers.map(o => driverRideView(db, o))) });
+    return json({ activeRide: active ? await driverRideView(db, active) : null, offers: await Promise.all(offers.map(o => driverRideView(db, o))) }, 200, commonHeaders);
   }
 
   // Admin Endpoints
   if (path === "/api/admin/drivers" && method === "GET") {
     const { results } = await db.prepare("SELECT * FROM drivers ORDER BY created_at DESC").all();
-    return json(results.map(driverView));
+    return json(results.map(driverView), 200, commonHeaders);
   }
   if (path === "/api/admin/connected-drivers" || path === "/api/admin/driver-locations") {
     const threshold = new Date(Date.now() - 5 * 60000).toISOString();
     const { results } = await db.prepare("SELECT * FROM drivers WHERE status='active' AND is_online=1 AND last_seen_at > ?").bind(threshold).all();
-    return json(results.map(r => ({ id: r.public_id, name: `${r.first_name} ${r.last_name}`.trim(), phone: r.phone, location: { lat: r.current_lat, lon: r.current_lon, bearing: r.current_bearing }, connectionState: 'available', vehicleBrand: r.vehicle_brand, vehicleModel: r.vehicle_model, vehicleColor: r.vehicle_color, vehiclePlate: r.vehicle_plate })));
+    return json(results.map(r => ({ id: r.public_id, name: `${r.first_name} ${r.last_name}`.trim(), phone: r.phone, location: { lat: r.current_lat, lon: r.current_lon, bearing: r.current_bearing }, connectionState: 'available', vehicleBrand: r.vehicle_brand, vehicleModel: r.vehicle_model, vehicleColor: r.vehicle_color, vehiclePlate: r.vehicle_plate })), 200, commonHeaders);
   }
   if (path === "/api/dispatch/rides" && method === "GET") {
     const { results } = await db.prepare("SELECT r.*, d.first_name, d.last_name FROM rides r LEFT JOIN drivers d ON d.id=r.driver_id WHERE r.status NOT IN ('completed','cancelled') ORDER BY r.created_at DESC").all();
-    return json(results.map(r => ({ id: r.public_id, passenger: r.passenger_name, phone: r.passenger_phone, pickup: r.pickup_address, destination: r.destination_address, driver: r.first_name ? `${r.first_name} ${r.last_name}` : "—", status: r.status, priceDop: r.price_dop, createdAt: r.created_at, contactedAt: r.contacted_at, contactedBy: r.contacted_by, pickupLat: r.pickup_lat, pickupLon: r.pickup_lon, destinationLat: r.destination_lat, destinationLon: r.destination_lon })));
+    return json(results.map(r => ({ ...dispatchRideView(r), pickupLat: r.pickup_lat, pickupLon: r.pickup_lon, destinationLat: r.destination_lat, destinationLon: r.destination_lon })), 200, commonHeaders);
   }
   if (path.startsWith("/api/contacts/lookup") && method === "GET") {
       const qPhone = phone(url.searchParams.get("phone"));
       const profile = await db.prepare("SELECT * FROM profiles WHERE phone=?").bind(qPhone).first();
-      if (!profile) return json({ found: false });
+      if (!profile) return json({ found: false }, 200, commonHeaders);
       const { results: rides } = await db.prepare("SELECT * FROM rides WHERE profile_id=? ORDER BY created_at DESC LIMIT 10").bind(profile.id).all();
-      return json({ found: true, profile: profileView(profile), rides: await Promise.all(rides.map(r => driverRideView(db, r))) });
+      return json({ found: true, profile: profileView(profile), rides: await Promise.all(rides.map(r => driverRideView(db, r))) }, 200, commonHeaders);
   }
   if (path === "/api/dispatch/clients" && method === "GET") {
       const { results } = await db.prepare("SELECT * FROM profiles WHERE kind='registered'").all();
-      return json(results.map(profileView));
+      return json(results.map(profileView), 200, commonHeaders);
   }
 
   if (path === "/api/admin/internal-chat") {
     if (method === "GET") {
       const { results } = await db.prepare("SELECT * FROM internal_chat_messages ORDER BY created_at ASC").all();
-      return json({ messages: results });
+      return json({ messages: results }, 200, commonHeaders);
     }
     const body = await bodyJson(request);
     await db.prepare("INSERT INTO internal_chat_messages(conversation_id, sender, message, created_at) VALUES(?,?,?,?)").bind("admin", "admin", clean(body.message), nowIso()).run();
-    return json({ ok: true });
+    return json({ ok: true }, 200, commonHeaders);
   }
 
-  if (path === "/api/admin/chats" && method === "GET") return json({ unreadCount: 0 });
-  if (path === "/api/admin/notifications" && method === "GET") return json({ unreadCount: 0, notifications: [] });
+  if (path === "/api/admin/chats" && method === "GET") return json({ unreadCount: 0 }, 200, commonHeaders);
+  if (path === "/api/admin/notifications" && method === "GET") return json({ unreadCount: 0, notifications: [] }, 200, commonHeaders);
 
   if (path === "/api/rides/estimate" && method === "POST") {
       const body = await bodyJson(request);
-      const dist = 5.0; // Mock estimate for now if needed, or calculate properly
-      return json({ estimate: { distanceKm: dist, durationMin: 15, priceDop: 250 } });
+      return json({ estimate: { distanceKm: 5.0, durationMin: 15, priceDop: 250 } }, 200, commonHeaders);
   }
 
   if (path === "/api/route") {
       const coords = url.searchParams.get("coordinates");
       const resp = await fetch(`https://router.project-osrm.org/route/v1/driving/${coords}?overview=full&geometries=geojson`);
-      return new Response(resp.body, resp);
+      return new Response(resp.body, { ...resp, headers: { ...resp.headers, ...commonHeaders } });
   }
 
   throw new HttpError(404, "Not Found");
