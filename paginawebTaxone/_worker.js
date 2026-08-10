@@ -49,11 +49,26 @@ export default {
         throw new HttpError(401, "Admin incorrecto.");
       }
 
-      if (path === "/api/admin/logout" && method === "POST") {
-        return json({ ok: true }, 200, {
-          "Set-Cookie": `taxote_admin_session=; Path=/; Secure; SameSite=Lax; HttpOnly; Domain=${url.hostname}; Max-Age=0`,
-          ...headers
-        });
+      if (path === "/api/admin/reset-database" && method === "POST") {
+          const cookies = parseCookies(request);
+          if (cookies.taxote_admin_session) {
+              await db.batch([
+                  db.prepare("DELETE FROM driver_documents"),
+                  db.prepare("DELETE FROM driver_sessions"),
+                  db.prepare("DELETE FROM ride_rejections"),
+                  db.prepare("DELETE FROM ride_stops"),
+                  db.prepare("DELETE FROM rides"),
+                  db.prepare("DELETE FROM driver_deposits"),
+                  db.prepare("DELETE FROM chat_messages"),
+                  db.prepare("DELETE FROM internal_chat_messages"),
+                  db.prepare("DELETE FROM admin_notifications"),
+                  db.prepare("DELETE FROM sessions"),
+                  db.prepare("DELETE FROM profiles"),
+                  db.prepare("DELETE FROM drivers")
+              ]);
+              return json({ ok: true, message: "Base de datos reiniciada correctamente." }, 200, headers);
+          }
+          throw new HttpError(401, "No autorizado.");
       }
 
       const adminPaths = ["/api/admin/", "/api/dispatch/", "/reports.html", "/drivers.html", "/history.html", "/conversation-history.html", "/drivers-chat.html"];
@@ -127,7 +142,7 @@ async function createSession(db, t, o, idVal) { const tok = crypto.randomUUID().
 async function driverSession(req, db) { const t = parseCookies(req).taxote_driver_session; if (!t) return null; return db.prepare(`SELECT d.* FROM driver_sessions s JOIN drivers d ON d.id=s.driver_id WHERE s.token_hash=? AND s.expires_at>?`).bind(await sha256(t), nowIso()).first(); }
 
 function driverView(row, detailed = false) {
-  const v = { id: row.public_id, firstName: row.first_name, lastName: row.last_name, name: `${row.first_name} ${row.last_name}`.trim(), phone: row.phone, email: row.email, vehiclePlate: row.vehicle_plate, vehicleBrand: row.vehicle_brand, vehicleModel: row.vehicle_model, vehicleColor: row.vehicle_color, vehicleType: row.vehicle_type, status: row.status, pointsBalance: row.points_balance, online: Boolean(row.is_online), available: Boolean(row.is_available), createdAt: row.created_at };
+  const v = { id: row.public_id, firstName: row.first_name, lastName: row.last_name, name: `${row.first_name} ${row.last_name}`.trim(), phone: row.phone, email: row.email, cedula: row.cedula, vehiclePlate: row.vehicle_plate, vehicleBrand: row.vehicle_brand, vehicleModel: row.vehicle_model, vehicleColor: row.vehicle_color, vehicleType: row.vehicle_type, status: row.status, pointsBalance: row.points_balance, online: Boolean(row.is_online), available: Boolean(row.is_available), createdAt: row.created_at };
   if (detailed) v.documents = { selfie: `/api/admin/drivers/${row.public_id}/document/selfie`, idFront: `/api/admin/drivers/${row.public_id}/document/idFront`, vehicle: `/api/admin/drivers/${row.public_id}/document/vehicle` };
   return v;
 }
@@ -224,12 +239,17 @@ async function handleApi(request, env, url) {
     return json(results.map(r => ({ ...dispatchRideView(r), pickupLat: Number(r.pickup_lat), pickupLon: Number(r.pickup_lon), destinationLat: Number(r.destination_lat), destinationLon: Number(r.destination_lon) })), 200, headers);
   }
 
+  if (path === "/api/dispatch/clients" && method === "GET") {
+    const { results } = await db.prepare("SELECT * FROM profiles WHERE kind='registered'").all();
+    return json(results.map(r => ({ id: r.public_id, name: r.name, phone: r.phone })), 200, headers);
+  }
+
   if (path === "/api/rides" && method === "POST") {
     const body = await bodyJson(request), rid = id("RID"), stamp = nowIso(), p = phone(body.phone), n = clean(body.name);
     const driverRow = body.driverId ? await db.prepare("SELECT id FROM drivers WHERE public_id=?").bind(body.driverId).first() : null;
     await db.prepare(`INSERT INTO rides(public_id,passenger_name,passenger_phone,pickup_address,pickup_lat,pickup_lon,destination_address,destination_lat,destination_lon,status,driver_id,note,price_dop,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
       .bind(rid, n, p, clean(body.pickup.address), Number(body.pickup.lat), Number(body.pickup.lon), clean(body.destination.address), Number(body.destination.lat), Number(body.destination.lon), driverRow ? "accepted" : "pending", driverRow?.id || null, clean(body.note), 250, stamp).run();
-    return json({ ok: true, rideId: rid }, 201, headers);
+    return json({ ok: true, ride: { id: rid } }, 201, headers);
   }
 
   if (path === "/api/route") {
@@ -240,7 +260,7 @@ async function handleApi(request, env, url) {
 
   if (path === "/api/geocode") {
       const q = url.searchParams.get("q");
-      const { results } = await db.prepare("SELECT * FROM addresses WHERE name LIKE ? LIMIT 5").bind(`%${q}%`).all();
+      const { results } = await db.prepare("SELECT * FROM addresses WHERE name LIKE ? LIMIT 10").bind(`%${q}%`).all();
       return json(results.map(r => ({ display_name: r.name, lat: r.lat, lon: r.lon })), 200, headers);
   }
 
