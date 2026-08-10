@@ -9,8 +9,9 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Outfit:wght@500;600;700&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="styles.css?v=20260806-26" />
-    <link rel="stylesheet" href="drivers.css?v=20260806-1" />
+    <link rel="stylesheet" href="css/styles.css?v=20260806-26" />
+    <link rel="stylesheet" href="css/drivers.css?v=20260806-1" />
+    <style>.gallery-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 15px; margin-top: 10px; } .gallery-item { background: #f8f9fa; border-radius: 8px; overflow: hidden; border: 1px solid #ddd; } .gallery-item img { width: 100%; height: 150px; object-fit: cover; cursor: pointer; } .gallery-item span { display: block; padding: 5px; text-align: center; font-size: 11px; font-weight: 600; color: #444; }</style>
   </head>
   <body class="drivers-admin-body">
     <header class="topbar">
@@ -26,7 +27,11 @@
         <a class="active" href="/drivers.html"><span>♙</span> Conductores</a>
         <a href="/deposits.html"><span>💰</span> Depósitos</a>
         <a href="/history.html"><span>◷</span> Historial de viajes</a>
-<a href="/drivers-chat.html"><span>▤</span> Chat de conductores</a><a href="/conversation-history.html"><span>▧</span> Historial de conversación</a><a href="/user.html"><span>◉</span> TAXOTE User</a>
+        <a href="/drivers-chat.html"><span>▤</span> Chat de conductores</a>
+        <a href="/conversation-history.html"><span>▧</span> Historial de conversación</a>
+        <a href="/reports.html"><span>▦</span> Reportes</a>
+        <hr style="border: 0; border-top: 1px solid #eee; margin: 10px 0;">
+        <a href="#" onclick="adminLogout()" style="color:#d32f2f"><span>×</span> Cerrar sesión</a>
       </nav>
       <div class="side-menu-footer"><p><b>Administrador</b><small>Operaciones TAXOTE</small></p></div>
     </aside>
@@ -49,12 +54,51 @@
           <section><h3>Billetera y Puntos</h3><dl class="detail-grid"><div><dt>Puntos disponibles</dt><dd><b id="detail-points" style="font-size: 20px; color: #064b44;">0</b></dd></div><div><dt>Modificar puntos</dt><dd style="display: flex; gap: 8px;"><input type="number" id="edit-points-input" style="width: 80px; padding: 4px 8px; border: 1px solid #ddd; border-radius: 4px;" /><button id="save-points" type="button" style="padding: 4px 12px; background: #0b2e47; color: #fff; border: none; border-radius: 4px; cursor: pointer;">Guardar</button></dd></div></dl></section>
           <section><h3>Información personal</h3><dl class="detail-grid"><div><dt>Correo</dt><dd id="detail-email">—</dd></div><div><dt>Teléfono</dt><dd id="detail-phone">—</dd></div><div><dt>Cédula</dt><dd id="detail-cedula">—</dd></div><div><dt>Último acceso</dt><dd id="detail-login">Nunca</dd></div></dl></section>
           <section><h3>Vehículo registrado</h3><dl class="detail-grid"><div><dt>Tipo</dt><dd id="detail-vehicle-type">—</dd></div><div><dt>Marca</dt><dd id="detail-vehicle-brand">—</dd></div><div><dt>Modelo</dt><dd id="detail-vehicle-model">—</dd></div><div><dt>Color</dt><dd id="detail-color">—</dd></div><div><dt>Placa</dt><dd id="detail-plate" class="plate-value">—</dd></div></dl></section>
-          <section><h3>Documentos enviados</h3><div class="document-grid"><a id="id-front-link" target="_blank"><span>Frente de la cédula</span><img id="detail-id-front" alt="Frente de la cédula" /></a><a id="id-back-link" target="_blank"><span>Parte posterior</span><img id="detail-id-back" alt="Parte posterior de la cédula" /></a><a id="vehicle-link" target="_blank"><span>Fotografía del vehículo</span><img id="detail-vehicle-photo" alt="Vehículo del conductor" /></a></div></section>
+          <section><h3>Documentos y Fotografías</h3>
+            <div class="gallery-grid">
+                <div class="gallery-item" id="item-selfie"><span>Foto de perfil</span><a target="_blank"><img id="detail-selfie" /></a></div>
+                <div class="gallery-item" id="item-id-front"><span>Cédula (Frente)</span><a target="_blank"><img id="detail-id-front" /></a></div>
+                <div class="gallery-item" id="item-id-back"><span>Cédula (Posterior)</span><a target="_blank"><img id="detail-id-back" /></a></div>
+                <div class="gallery-item" id="item-vehicle"><span>Vehículo (Frontal)</span><a target="_blank"><img id="detail-vehicle-photo" /></a></div>
+                <div class="gallery-item" id="item-v-back"><span>Vehículo (Trasera)</span><a target="_blank"><img id="detail-v-back" /></a></div>
+                <div class="gallery-item" id="item-v-left"><span>Vehículo (Izquierda)</span><a target="_blank"><img id="detail-v-left" /></a></div>
+                <div class="gallery-item" id="item-v-right"><span>Vehículo (Derecha)</span><a target="_blank"><img id="detail-v-right" /></a></div>
+                <div class="gallery-item" id="item-plate"><span>Placa</span><a target="_blank"><img id="detail-plate-photo" /></a></div>
+            </div>
+          </section>
         </div>
         <footer class="detail-actions"><button id="delete-driver" class="delete-driver" type="button">Eliminar registro</button><div><button id="cancel-driver" class="cancel-driver" type="button">Cancelar cuenta</button><button id="activate-driver" class="activate-driver" type="button">✓ Activar conductor</button></div></footer>
       </section>
     </div>
+    <div id="driver-edit-modal" class="admin-modal" hidden>
+      <section class="driver-detail" role="dialog" aria-modal="true" aria-labelledby="edit-name">
+        <button id="close-driver-edit" class="detail-close" type="button" aria-label="Cerrar">×</button>
+        <header class="detail-header"><div><h2 id="edit-name">Editar Conductor</h2></div></header>
+        <form id="edit-driver-form" class="detail-content">
+          <section>
+            <div class="detail-grid">
+              <div><dt>Nombre</dt><dd><input type="text" id="edit-first-name" required /></dd></div>
+              <div><dt>Apellido</dt><dd><input type="text" id="edit-last-name" required /></dd></div>
+              <div><dt>Correo</dt><dd><input type="email" id="edit-email" required /></dd></div>
+              <div><dt>Teléfono</dt><dd><input type="tel" id="edit-phone" required /></dd></div>
+              <div><dt>Nueva Contraseña</dt><dd><input type="password" id="edit-password" placeholder="Dejar en blanco para no cambiar" /></dd></div>
+            </div>
+          </section>
+          <footer class="detail-actions" style="justify-content: flex-end; margin-top: 20px;">
+            <button class="activate-driver" type="submit">Guardar Cambios</button>
+          </footer>
+        </form>
+      </section>
+    </div>
+
+    <script>
+      async function adminLogout() {
+          if (!confirm("¿Seguro que deseas cerrar la sesión administrativa?")) return;
+          try { await fetch("/api/admin/logout", { method: "POST", credentials: "same-origin" }); } catch (_) {}
+          location.href = "/admin-login.html";
+        }
+    </script>
     <div id="admin-toast" class="toast" role="status" aria-live="polite"></div>
-    <script src="drivers.js?v=20260806-2"></script>
+    <script src="js/drivers.js?v=20260806-3"></script>
   </body>
 </html>

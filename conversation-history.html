@@ -5,11 +5,11 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <meta name="theme-color" content="#071f33" />
   <title>Historial de conversación | TAXOTE</title>
-  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <link rel="icon" type="image/svg+xml" href="favicon.svg" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Outfit:wght@600;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/conversation-history.css?v=20260806-1" />
+  <link rel="stylesheet" href="css/conversation-history.css?v=20260806-1" />
   <style>.archive-modal[hidden],.archive-drawer-overlay[hidden],.archive-toast[hidden]{display:none!important}</style>
 </head>
 <body>
@@ -23,8 +23,17 @@
       <a href="/history.html">◷ Historial de viajes</a>
       <a href="/drivers-chat.html">▤ Chat de conductores</a>
       <a class="active" href="/conversation-history.html">▧ Historial de conversación</a>
-      <a href="/user.html">◉ TAXOTE User</a>
+      <a href="/reports.html">▦ Reportes</a>
+      <hr style="border: 0; border-top: 1px solid rgba(255,255,255,.1); margin: 10px 0;">
+      <a href="#" onclick="adminLogout()" style="color:#f54b58">× Cerrar sesión</a>
     </nav>
+    <script>
+      async function adminLogout() {
+          if (!confirm("¿Seguro que deseas cerrar la sesión administrativa?")) return;
+          try { await fetch("/api/admin/logout", { method: "POST", credentials: "same-origin" }); } catch (_) {}
+          location.href = "/admin-login.html";
+        }
+    </script>
     <p><b>Administrador</b><small>Operaciones TAXOTE</small></p>
   </aside>
 
@@ -47,6 +56,6 @@
     </section>
   </div>
   <div id="archive-toast" class="archive-toast" hidden></div>
-  <script src="/conversation-history.js?v=20260806-1"></script>
+  <script src="js/conversation-history.js?v=20260806-1"></script>
 </body>
 </html>

@@ -1,0 +1,54 @@
+TAXOTE - REEMPLAZO PARA PRODUCCION
+=================================
+
+Este ZIP esta organizado para extraerse directamente en la RAIZ de tu repositorio GitHub.
+
+Estructura incluida:
+  wrangler.jsonc
+  paginawebTaxone/
+    _worker.js
+    .assetsignore
+    index.html
+    admin-login.html
+    drivers.html
+    deposits.html
+    history.html
+    drivers-chat.html
+    conversation-history.html
+    reports.html
+    user.html
+    favicon.svg
+
+IMPORTANTE:
+- NO borres las carpetas paginawebTaxone/js ni paginawebTaxone/css de tu repositorio.
+- Este ZIP NO contiene esas carpetas porque no fueron proporcionadas en el chat.
+- Extrae el ZIP ENCIMA del repositorio existente y acepta reemplazar los archivos incluidos.
+- No cambies el database_id de D1.
+- No agregues Firebase.
+
+Configuracion de Cloudflare Builds:
+- Comando de compilacion: Ninguno
+- Implementar comando: npx wrangler deploy
+- Comando de version: npx wrangler versions upload
+- Directorio raiz: .
+- Rama de produccion: main
+
+Cambios de produccion incluidos:
+- Cloudflare D1 con binding taxote_db.
+- Assets binding ASSETS para que env.ASSETS.fetch(request) funcione.
+- run_worker_first=true para que la proteccion de sesion se ejecute antes de servir paginas HTML.
+- .assetsignore evita publicar _worker.js como archivo estatico.
+- Sesion administrativa validada en D1 por 30 dias.
+- Redireccion automatica al login y regreso a la URL solicitada.
+- Logout real mediante el servidor.
+- Ruta publica de borrado maestro eliminada del Worker de reemplazo.
+
+PASOS:
+1. Haz una copia del repositorio actual.
+2. Extrae este ZIP en la raiz del repositorio.
+3. Acepta reemplazar archivos con el mismo nombre.
+4. Verifica que paginawebTaxone/js y paginawebTaxone/css sigan ahi.
+5. git add .
+6. git commit -m "TAXOTE produccion Cloudflare D1 auth fix"
+7. git push origin main
+8. Cloudflare desplegara automaticamente con npx wrangler deploy.

@@ -1,0 +1,18 @@
+TAXOTE - PARCHE DE REEMPLAZO
+
+Este ZIP reemplaza solamente los archivos incluidos.
+Mantén tus carpetas css/ y js/ actuales en el servidor.
+
+Cambios principales:
+- Mantiene Cloudflare Workers + D1 (taxote_db).
+- No usa Firebase.
+- Sesión administrativa guardada y validada en D1 por 30 días.
+- Redirección automática al login para páginas administrativas.
+- Después del login vuelve a la URL que intentabas abrir.
+- Logout real mediante /api/admin/logout y cookie HttpOnly expirada por el servidor.
+- Se eliminó del Worker la ruta pública de borrado maestro.
+
+IMPORTANTE:
+Los archivos js/app.js, js/drivers.js, js/history.js, js/deposits.js, js/drivers-chat.js,
+js/conversation-history.js y js/user.js no fueron proporcionados, por lo que este paquete no puede
+corregir llamadas API que estén dentro de esos archivos. No borres tus carpetas js/ ni css/.

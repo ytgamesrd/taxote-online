@@ -43,11 +43,10 @@
       </nav>
 
       <script>
-        function adminLogout() {
-          if(confirm("¿Seguro que deseas cerrar la sesión administrativa?")) {
-            document.cookie = "taxote_admin_session=; Path=/; Expires=Thu, 01 Jan 1970 00:00:01 GMT;";
-            location.href = "/admin-login.html";
-          }
+        async function adminLogout() {
+          if (!confirm("¿Seguro que deseas cerrar la sesión administrativa?")) return;
+          try { await fetch("/api/admin/logout", { method: "POST", credentials: "same-origin" }); } catch (_) {}
+          location.href = "/admin-login.html";
         }
       </script>
     </aside>

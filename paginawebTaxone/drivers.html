@@ -92,12 +92,11 @@
     </div>
 
     <script>
-      function adminLogout() {
-        if(confirm("¿Seguro que deseas cerrar la sesión administrativa?")) {
-          document.cookie = "taxote_admin_session=; Path=/; Expires=Thu, 01 Jan 1970 00:00:01 GMT;";
+      async function adminLogout() {
+          if (!confirm("¿Seguro que deseas cerrar la sesión administrativa?")) return;
+          try { await fetch("/api/admin/logout", { method: "POST", credentials: "same-origin" }); } catch (_) {}
           location.href = "/admin-login.html";
         }
-      }
     </script>
     <div id="admin-toast" class="toast" role="status" aria-live="polite"></div>
     <script src="js/drivers.js?v=20260806-3"></script>
