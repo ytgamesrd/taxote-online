@@ -38,8 +38,8 @@ public class LocationService extends Service implements LocationListener, Sensor
     private static final String CHAT_CHANNEL_ID = "taxote_driver_chat";
     private static final int NOTIFICATION_ID = 2407;
     private static final int CHAT_NOTIFICATION_ID = 2408;
-    private static final long LOCATION_INTERVAL_MS = 4000L;
-    private static final long HEARTBEAT_INTERVAL_MS = 15000L;
+    private static final long LOCATION_INTERVAL_MS = 30000L;
+    private static final long HEARTBEAT_INTERVAL_MS = 60000L;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private LocationManager locationManager;

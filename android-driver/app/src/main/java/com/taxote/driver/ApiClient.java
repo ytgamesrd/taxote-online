@@ -18,10 +18,11 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public final class ApiClient {
-    private static final String BASE_URL = "https://www.taxote.online";
+    private static final String BASE_URL = "https://taxote.online";
     private static final ExecutorService EXECUTOR = Executors.newFixedThreadPool(4);
     private static final Handler MAIN = new Handler(Looper.getMainLooper());
     private static SharedPreferences preferences;
+    private static final String COOKIE_KEY = "taxote_driver_session";
 
     public interface Callback {
         void onComplete(ApiResponse response);
@@ -66,15 +67,16 @@ public final class ApiClient {
     }
 
     public static void clearSession() {
-        if (preferences != null) preferences.edit().remove("session_cookie").apply();
+        if (preferences != null) preferences.edit().remove(COOKIE_KEY).apply();
     }
 
     public static boolean hasSession() {
-        return preferences != null && !preferences.getString("session_cookie", "").isEmpty();
+        return preferences != null && !preferences.getString(COOKIE_KEY, "").isEmpty();
     }
 
     public static String sessionCookieHeader() {
-        return preferences == null ? "" : preferences.getString("session_cookie", "");
+        String cookie = preferences == null ? "" : preferences.getString(COOKIE_KEY, "");
+        return cookie.isEmpty() ? "" : COOKIE_KEY + "=" + cookie;
     }
 
     public static String absoluteUrl(String path) {
@@ -91,7 +93,7 @@ public final class ApiClient {
                 connection.setConnectTimeout(6000);
                 connection.setReadTimeout(45000);
                 connection.setRequestProperty("Accept", "application/json");
-                String cookie = preferences == null ? "" : preferences.getString("session_cookie", "");
+                String cookie = sessionCookieHeader();
                 if (!cookie.isEmpty()) connection.setRequestProperty("Cookie", cookie);
 
                 if (payload != null) {
@@ -107,9 +109,17 @@ public final class ApiClient {
                 int status = connection.getResponseCode();
                 String setCookie = connection.getHeaderField("Set-Cookie");
                 if (setCookie != null && preferences != null) {
-                    String sessionCookie = setCookie.split(";", 2)[0];
-                    if (sessionCookie.endsWith("=")) clearSession();
-                    else preferences.edit().putString("session_cookie", sessionCookie).apply();
+                    // Search for taxote_driver_session cookie
+                    String[] parts = setCookie.split(";");
+                    for (String part : parts) {
+                        String clean = part.trim();
+                        if (clean.startsWith(COOKIE_KEY + "=")) {
+                            String value = clean.substring(COOKIE_KEY.length() + 1);
+                            if (value.isEmpty() || value.equals("deleted")) clearSession();
+                            else preferences.edit().putString(COOKIE_KEY, value).apply();
+                            break;
+                        }
+                    }
                 }
                 InputStream stream = status >= 400 ? connection.getErrorStream() : connection.getInputStream();
                 String text = read(stream);
