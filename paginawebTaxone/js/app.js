@@ -1741,9 +1741,9 @@ function driverLocationIcon(driver) {
   const bearing = Number(driver.location?.bearing || 0);
   return L.divIcon({
     className: "taxote-driver-car-wrapper",
-    html: `<span class="taxote-driver-car ${state}" title="${state === "busy" ? "Conductor en servicio" : state === "available" ? "Conductor disponible" : "Última ubicación"}" style="transform:rotate(${bearing}deg)"><img src="/assets/taxote-car.png" alt="" style="width:58px;height:58px;" /></span>`,
-    iconSize: [58, 58],
-    iconAnchor: [29, 29]
+    html: `<span class="taxote-driver-car ${state}" title="${state === "busy" ? "Conductor en servicio" : state === "available" ? "Conductor disponible" : "Última ubicación"}" style="transform:rotate(${bearing}deg)"><img src="/assets/taxote-car.png" alt="" style="width:32px;height:35px;" /></span>`,
+    iconSize: [32, 35],
+    iconAnchor: [16, 17]
   });
 }
 
