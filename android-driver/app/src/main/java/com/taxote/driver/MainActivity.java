@@ -102,12 +102,10 @@ public class MainActivity extends Activity {
     }
 
     private void restoreActiveSession() {
-        if (ApiClient.hasSession()) {
-            openDashboard();
-            return;
-        }
-        ApiClient.get("/api/driver/me", response -> {
+        if (!ApiClient.hasSession()) return;
+        ApiClient.get("/api/driver/status", response -> {
             if (response.isSuccessful()) openDashboard();
+            else ApiClient.clearSession();
         });
     }
 

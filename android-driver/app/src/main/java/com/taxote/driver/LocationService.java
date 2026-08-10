@@ -39,7 +39,7 @@ public class LocationService extends Service implements LocationListener, Sensor
     private static final int NOTIFICATION_ID = 2407;
     private static final int CHAT_NOTIFICATION_ID = 2408;
     private static final long LOCATION_INTERVAL_MS = 30000L;
-    private static final long HEARTBEAT_INTERVAL_MS = 60000L;
+    private static final long HEARTBEAT_INTERVAL_MS = 30000L;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private LocationManager locationManager;

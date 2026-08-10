@@ -7,24 +7,32 @@ import android.os.Looper;
 
 import org.json.JSONObject;
 
-import java.io.BufferedReader;
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.io.OutputStream;
-import java.net.HttpURLConnection;
-import java.net.URL;
-import java.nio.charset.StandardCharsets;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+import java.util.concurrent.TimeUnit;
+
+import okhttp3.Call;
+import okhttp3.Callback;
+import okhttp3.Cookie;
+import okhttp3.CookieJar;
+import okhttp3.HttpUrl;
+import okhttp3.MediaType;
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.RequestBody;
+import okhttp3.Response;
 
 public final class ApiClient {
-    private static final String BASE_URL = "https://taxote.online";
-    private static final ExecutorService EXECUTOR = Executors.newFixedThreadPool(4);
+    public static final String BASE_URL = "https://taxote.online";
+    private static OkHttpClient client;
     private static final Handler MAIN = new Handler(Looper.getMainLooper());
     private static SharedPreferences preferences;
-    private static final String COOKIE_KEY = "taxote_driver_session";
 
-    public interface Callback {
+    public interface ApiCallback {
         void onComplete(ApiResponse response);
     }
 
@@ -56,92 +64,132 @@ public final class ApiClient {
 
     public static void initialize(Context context) {
         preferences = context.getApplicationContext().getSharedPreferences("taxote_driver", Context.MODE_PRIVATE);
+        client = new OkHttpClient.Builder()
+                .cookieJar(new PersistentCookieJar(preferences))
+                .connectTimeout(30, TimeUnit.SECONDS)
+                .readTimeout(30, TimeUnit.SECONDS)
+                .build();
     }
 
-    public static void get(String path, Callback callback) {
+    public static void get(String path, ApiCallback callback) {
         request("GET", path, null, callback);
     }
 
-    public static void post(String path, JSONObject body, Callback callback) {
+    public static void post(String path, JSONObject body, ApiCallback callback) {
         request("POST", path, body, callback);
     }
 
     public static void clearSession() {
-        if (preferences != null) preferences.edit().remove(COOKIE_KEY).apply();
+        if (preferences != null) {
+            preferences.edit().remove("persistent_cookies").apply();
+        }
+        // Also recreate client to clear memory cache of cookies if needed
     }
 
     public static boolean hasSession() {
-        return preferences != null && !preferences.getString(COOKIE_KEY, "").isEmpty();
-    }
-
-    public static String sessionCookieHeader() {
-        String cookie = preferences == null ? "" : preferences.getString(COOKIE_KEY, "");
-        return cookie.isEmpty() ? "" : COOKIE_KEY + "=" + cookie;
+        if (preferences == null) return false;
+        Set<String> cookies = preferences.getStringSet("persistent_cookies", null);
+        if (cookies == null) return false;
+        for (String c : cookies) {
+            if (c.contains("taxote_driver_session")) return true;
+        }
+        return false;
     }
 
     public static String absoluteUrl(String path) {
-        return path == null || path.isEmpty() ? "" : path.startsWith("http") ? path : BASE_URL + path;
+        if (path == null || path.isEmpty()) return "";
+        if (path.startsWith("http")) return path;
+        return BASE_URL + (path.startsWith("/") ? "" : "/") + path;
     }
 
-    private static void request(String method, String path, JSONObject payload, Callback callback) {
-        EXECUTOR.execute(() -> {
-            ApiResponse result;
-            HttpURLConnection connection = null;
-            try {
-                connection = (HttpURLConnection) new URL(BASE_URL + path).openConnection();
-                connection.setRequestMethod(method);
-                connection.setConnectTimeout(6000);
-                connection.setReadTimeout(45000);
-                connection.setRequestProperty("Accept", "application/json");
-                String cookie = sessionCookieHeader();
-                if (!cookie.isEmpty()) connection.setRequestProperty("Cookie", cookie);
+    private static void request(String method, String path, JSONObject payload, ApiCallback callback) {
+        if (client == null) {
+            MAIN.post(() -> callback.onComplete(new ApiResponse(0, null, "ApiClient no inicializado.")));
+            return;
+        }
 
-                if (payload != null) {
-                    byte[] bytes = payload.toString().getBytes(StandardCharsets.UTF_8);
-                    connection.setDoOutput(true);
-                    connection.setRequestProperty("Content-Type", "application/json; charset=utf-8");
-                    connection.setFixedLengthStreamingMode(bytes.length);
-                    try (OutputStream output = connection.getOutputStream()) {
-                        output.write(bytes);
-                    }
-                }
+        Request.Builder builder = new Request.Builder()
+                .url(absoluteUrl(path))
+                .addHeader("Accept", "application/json");
 
-                int status = connection.getResponseCode();
-                String setCookie = connection.getHeaderField("Set-Cookie");
-                if (setCookie != null && preferences != null) {
-                    // Search for taxote_driver_session cookie
-                    String[] parts = setCookie.split(";");
-                    for (String part : parts) {
-                        String clean = part.trim();
-                        if (clean.startsWith(COOKIE_KEY + "=")) {
-                            String value = clean.substring(COOKIE_KEY.length() + 1);
-                            if (value.isEmpty() || value.equals("deleted")) clearSession();
-                            else preferences.edit().putString(COOKIE_KEY, value).apply();
-                            break;
-                        }
-                    }
-                }
-                InputStream stream = status >= 400 ? connection.getErrorStream() : connection.getInputStream();
-                String text = read(stream);
-                JSONObject json = text.isEmpty() ? new JSONObject() : new JSONObject(text);
-                result = new ApiResponse(status, json, null);
-            } catch (Exception error) {
-                result = new ApiResponse(0, null, "No se pudo conectar con el servidor de TAXOTE. Verifica tu conexión a internet.");
-            } finally {
-                if (connection != null) connection.disconnect();
+        if (payload != null) {
+            RequestBody body = RequestBody.create(payload.toString(), MediaType.get("application/json; charset=utf-8"));
+            builder.method(method, body);
+        } else if (method.equals("POST")) {
+            builder.post(RequestBody.create("", null));
+        } else {
+            builder.method(method, null);
+        }
+
+        client.newCall(builder.build()).enqueue(new Callback() {
+            @Override
+            public void onFailure(Call call, IOException e) {
+                MAIN.post(() -> callback.onComplete(new ApiResponse(0, null, "Error de conexión con TAXOTE.")));
             }
-            ApiResponse finalResult = result;
-            MAIN.post(() -> callback.onComplete(finalResult));
+
+            @Override
+            public void onResponse(Call call, Response response) throws IOException {
+                int status = response.code();
+                String text = response.body() != null ? response.body().string() : "";
+                JSONObject json = null;
+                try {
+                    json = text.isEmpty() ? new JSONObject() : new JSONObject(text);
+                } catch (Exception ignored) {}
+                
+                final JSONObject finalJson = json;
+                MAIN.post(() -> callback.onComplete(new ApiResponse(status, finalJson, null)));
+            }
         });
     }
 
-    private static String read(InputStream stream) throws Exception {
-        if (stream == null) return "";
-        StringBuilder content = new StringBuilder();
-        try (BufferedReader reader = new BufferedReader(new InputStreamReader(stream, StandardCharsets.UTF_8))) {
-            String line;
-            while ((line = reader.readLine()) != null) content.append(line);
+    private static class PersistentCookieJar implements CookieJar {
+        private final SharedPreferences prefs;
+
+        PersistentCookieJar(SharedPreferences prefs) {
+            this.prefs = prefs;
         }
-        return content.toString();
+
+        @Override
+        public void saveFromResponse(HttpUrl url, List<Cookie> cookies) {
+            if (cookies.isEmpty()) return;
+            Set<String> saved = new HashSet<>(prefs.getStringSet("persistent_cookies", new HashSet<>()));
+            for (Cookie cookie : cookies) {
+                // Remove existing version of this cookie (by name and domain)
+                saved.removeIf(s -> {
+                    Cookie existing = Cookie.parse(url, s);
+                    return existing != null && existing.name().equals(cookie.name());
+                });
+                if (!cookie.value().equals("deleted") && !cookie.value().isEmpty()) {
+                    saved.add(cookie.toString());
+                }
+            }
+            prefs.edit().putStringSet("persistent_cookies", saved).apply();
+        }
+
+        @Override
+        public List<Cookie> loadForRequest(HttpUrl url) {
+            Set<String> saved = prefs.getStringSet("persistent_cookies", null);
+            if (saved == null || saved.isEmpty()) return Collections.emptyList();
+            List<Cookie> cookies = new ArrayList<>();
+            long now = System.currentTimeMillis();
+            boolean changed = false;
+            Set<String> toKeep = new HashSet<>();
+            
+            for (String s : saved) {
+                Cookie cookie = Cookie.parse(url, s);
+                if (cookie != null) {
+                    if (cookie.expiresAt() > now) {
+                        cookies.add(cookie);
+                        toKeep.add(s);
+                    } else {
+                        changed = true;
+                    }
+                }
+            }
+            if (changed) {
+                prefs.edit().putStringSet("persistent_cookies", toKeep).apply();
+            }
+            return cookies;
+        }
     }
 }
