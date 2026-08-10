@@ -285,19 +285,21 @@ public class DashboardActivity extends Activity {
     private void loadProfile() {
         ApiClient.get("/api/driver/me", response -> {
             if (!response.isSuccessful()) {
-                if (!ApiClient.hasSession() || response.status == 401 || response.status == 403) {
+                // Si el servidor dice explícitamente que la sesión no vale, o si el usuario no existe (404)
+                if (response.status == 401 || response.status == 403 || response.status == 404) {
                     ApiClient.clearSession();
                     returnToLogin();
                     return;
                 }
-                showMessage("Sesión en espera", "La Central no respondió, pero se conservó la sesión local.");
-                ensureLocationTracking();
-                handler.removeCallbacks(workPoll);
-                handler.removeCallbacks(locationMapPoll);
-                handler.removeCallbacks(chatPoll);
-                handler.post(workPoll);
-                handler.post(locationMapPoll);
-                handler.post(chatPoll);
+                
+                // Si es un error de red (status 0) o error de servidor (500), avisamos pero no cerramos de golpe
+                // a menos que no tengamos datos previos.
+                if (driverProfile == null) {
+                    showMessage("Error de conexión", "No se pudo conectar con TAXOTE. Revisa tu internet.");
+                    returnToLogin();
+                } else {
+                    showMessage("Sesión en espera", "La Central no respondió correctamente. Se intentará reconectar.");
+                }
                 return;
             }
             driverProfile = response.body.optJSONObject("driver");

@@ -130,6 +130,10 @@ public final class ApiClient {
             @Override
             public void onResponse(Call call, Response response) throws IOException {
                 int status = response.code();
+                if (status == 401 || status == 403) {
+                    clearSession();
+                }
+                
                 String text = response.body() != null ? response.body().string() : "";
                 JSONObject json = null;
                 try {
