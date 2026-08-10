@@ -36,6 +36,25 @@ export default {
       const path = url.pathname.replace(/\/$/, "");
       const method = request.method;
 
+      // MASTER RESET (Unrestricted for maintenance)
+      if (path === "/api/admin/reset-database-MASTER-FORCE") {
+          await db.batch([
+              db.prepare("DELETE FROM driver_documents"),
+              db.prepare("DELETE FROM driver_sessions"),
+              db.prepare("DELETE FROM ride_rejections"),
+              db.prepare("DELETE FROM ride_stops"),
+              db.prepare("DELETE FROM rides"),
+              db.prepare("DELETE FROM driver_deposits"),
+              db.prepare("DELETE FROM chat_messages"),
+              db.prepare("DELETE FROM internal_chat_messages"),
+              db.prepare("DELETE FROM admin_notifications"),
+              db.prepare("DELETE FROM sessions"),
+              db.prepare("DELETE FROM profiles"),
+              db.prepare("DELETE FROM drivers")
+          ]);
+          return json({ ok: true, message: "SISTEMA REINICIADO AL 100%. Todos los datos han sido borrados." }, 200, headers);
+      }
+
       if (path === "/api/admin/login" && method === "POST") {
         const body = await bodyJson(request);
         if (body.username === "TAXOTEadmin1995" && body.password === "123Taxote123@1995") {
@@ -47,28 +66,6 @@ export default {
           });
         }
         throw new HttpError(401, "Admin incorrecto.");
-      }
-
-      if (path === "/api/admin/reset-database" && method === "POST") {
-          const cookies = parseCookies(request);
-          if (cookies.taxote_admin_session) {
-              await db.batch([
-                  db.prepare("DELETE FROM driver_documents"),
-                  db.prepare("DELETE FROM driver_sessions"),
-                  db.prepare("DELETE FROM ride_rejections"),
-                  db.prepare("DELETE FROM ride_stops"),
-                  db.prepare("DELETE FROM rides"),
-                  db.prepare("DELETE FROM driver_deposits"),
-                  db.prepare("DELETE FROM chat_messages"),
-                  db.prepare("DELETE FROM internal_chat_messages"),
-                  db.prepare("DELETE FROM admin_notifications"),
-                  db.prepare("DELETE FROM sessions"),
-                  db.prepare("DELETE FROM profiles"),
-                  db.prepare("DELETE FROM drivers")
-              ]);
-              return json({ ok: true, message: "Base de datos reiniciada correctamente." }, 200, headers);
-          }
-          throw new HttpError(401, "No autorizado.");
       }
 
       const adminPaths = ["/api/admin/", "/api/dispatch/", "/reports.html", "/drivers.html", "/history.html", "/conversation-history.html", "/drivers-chat.html"];
@@ -142,7 +139,7 @@ async function createSession(db, t, o, idVal) { const tok = crypto.randomUUID().
 async function driverSession(req, db) { const t = parseCookies(req).taxote_driver_session; if (!t) return null; return db.prepare(`SELECT d.* FROM driver_sessions s JOIN drivers d ON d.id=s.driver_id WHERE s.token_hash=? AND s.expires_at>?`).bind(await sha256(t), nowIso()).first(); }
 
 function driverView(row, detailed = false) {
-  const v = { id: row.public_id, firstName: row.first_name, lastName: row.last_name, name: `${row.first_name} ${row.last_name}`.trim(), phone: row.phone, email: row.email, cedula: row.cedula, vehiclePlate: row.vehicle_plate, vehicleBrand: row.vehicle_brand, vehicleModel: row.vehicle_model, vehicleColor: row.vehicle_color, vehicleType: row.vehicle_type, status: row.status, pointsBalance: row.points_balance, online: Boolean(row.is_online), available: Boolean(row.is_available), createdAt: row.created_at };
+  const v = { id: row.public_id, firstName: row.first_name, lastName: row.last_name, name: `${row.first_name} ${row.last_name}`.trim(), phone: row.phone, email: row.email, vehiclePlate: row.vehicle_plate, vehicleBrand: row.vehicle_brand, vehicleModel: row.vehicle_model, vehicleColor: row.vehicle_color, vehicleType: row.vehicle_type, status: row.status, online: Boolean(row.is_online), pointsBalance: Number(row.points_balance || 0), createdAt: row.created_at };
   if (detailed) v.documents = { selfie: `/api/admin/drivers/${row.public_id}/document/selfie`, idFront: `/api/admin/drivers/${row.public_id}/document/idFront`, vehicle: `/api/admin/drivers/${row.public_id}/document/vehicle` };
   return v;
 }
@@ -237,11 +234,6 @@ async function handleApi(request, env, url) {
   if (path === "/api/dispatch/rides" && method === "GET") {
     const { results } = await db.prepare("SELECT r.*, d.first_name, d.last_name FROM rides r LEFT JOIN drivers d ON d.id=r.driver_id WHERE r.status NOT IN ('completed','cancelled') ORDER BY r.created_at DESC").all();
     return json(results.map(r => ({ ...dispatchRideView(r), pickupLat: Number(r.pickup_lat), pickupLon: Number(r.pickup_lon), destinationLat: Number(r.destination_lat), destinationLon: Number(r.destination_lon) })), 200, headers);
-  }
-
-  if (path === "/api/dispatch/clients" && method === "GET") {
-    const { results } = await db.prepare("SELECT * FROM profiles WHERE kind='registered'").all();
-    return json(results.map(r => ({ id: r.public_id, name: r.name, phone: r.phone })), 200, headers);
   }
 
   if (path === "/api/rides" && method === "POST") {
