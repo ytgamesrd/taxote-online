@@ -307,7 +307,7 @@ async function calculateRoadRoute() {
     routeLayer.clearLayers();
     if (data.routes?.length) {
       const latLngs = data.routes[0].geometry.coordinates.map(([lon, lat]) => [lat, lon]);
-      L.polyline(latLngs, { color: "#f4c400", weight: 6 }).addTo(routeLayer);
+      L.polyline(latLngs, { color: "#0b2e47", weight: 6 }).addTo(routeLayer);
       routeNotice.textContent = `Ruta lista: ${(data.routes[0].distance/1000).toFixed(1)} km`;
     }
   } catch {}
@@ -412,7 +412,162 @@ function toggleChat(type) {
 $("#btn-whatsapp-toggle")?.addEventListener("click", () => toggleChat('whatsapp'));
 $("#btn-chat-toggle")?.addEventListener("click", () => toggleChat('internal'));
 
+async function handleBookingSubmit(e) {
+  e.preventDefault();
+  const isGuest = serviceType.value === "Invitado";
+  const phoneVal = isGuest ? $("#guest-phone").value : selectedCustomer?.phone;
+  const nameVal = isGuest ? $("#guest-name").value : selectedCustomer?.name;
+
+  if (!phoneVal || !nameVal || !selectedLocations.pickup || !selectedLocations.destination) {
+    showToast("Por favor complete todos los campos obligatorios.");
+    return;
+  }
+
+  const details = {
+    phone: phoneVal,
+    name: nameVal,
+    customerName: nameVal,
+    customerPhone: phoneVal,
+    pickup: selectedLocations.pickup,
+    destination: selectedLocations.destination,
+    stops: routeStops.map(s => s.location).filter(Boolean),
+    driverId: $("#driver-assign-id").value,
+    note: $("#dispatch-note").value,
+    scheduledAt: serviceType.value === "scheduled" ? `${$("#schedule-date").value}T${$("#schedule-time").value}` : null,
+    passengerCount: parseInt($("#passenger-count-select").value),
+    paymentInfo: $("#payment-method-select").value,
+    passengerInfo: $("#passenger-count-select").value,
+    distanceKm: 5.2, // Should come from estimate API
+    durationMin: 15,
+    priceDop: 250
+  };
+
+  openBookingConfirmationModal(details);
+}
+
+bookingForm?.addEventListener("submit", handleBookingSubmit);
+bookingConfirmationConfirmButton?.addEventListener("click", submitConfirmedBooking);
+bookingConfirmationCancelButton?.addEventListener("click", closeBookingConfirmationModal);
+bookingConfirmationClose?.addEventListener("click", closeBookingConfirmationModal);
+
+async function searchAddress(query, resultsId, kind) {
+    if (query.length < 3) {
+        $(resultsId).hidden = true;
+        return;
+    }
+    try {
+        const results = await fetchJson(`/api/geocode?q=${encodeURIComponent(query)}`);
+        if (results.length) {
+            $(resultsId).innerHTML = results.map(r => `
+                <button type="button" class="address-option" onclick="selectAddress('${resultsId}', '${kind}', '${escapeHtml(r.display_name)}', ${r.lat}, ${r.lon})">
+                    ${escapeHtml(r.display_name)}
+                </button>
+            `).join("");
+            $(resultsId).hidden = false;
+        } else {
+            $(resultsId).hidden = true;
+        }
+    } catch {}
+}
+
+window.selectAddress = (resultsId, kind, address, lat, lon) => {
+    $(resultsId).hidden = true;
+    selectedLocations[kind] = { address, lat, lon };
+    if (kind === 'pickup') pickupInput.value = address;
+    else if (kind === 'destination') destinationInput.value = address;
+    renderSelectionMarkers();
+    calculateRoadRoute();
+};
+
+pickupInput?.addEventListener("input", (e) => searchAddress(e.target.value, "#pickup-results", "pickup"));
+destinationInput?.addEventListener("input", (e) => searchAddress(e.target.value, "#destination-results", "destination"));
+
+$("#add-stop")?.addEventListener("click", () => {
+    if (stopCount >= 3) return;
+    stopCount++;
+    const id = `stop-${Date.now()}`;
+    const div = document.createElement("div");
+    div.className = "field address-field";
+    div.innerHTML = `
+        <div style="display:flex; gap:10px; align-items:center;">
+            <div class="address-control" style="flex:1">
+                <input type="search" placeholder="Parada ${stopCount}..." oninput="searchAddress(this.value, '#${id}-results', 'stop-${stopCount}')">
+                <div id="${id}-results" class="address-results" hidden></div>
+            </div>
+            <button type="button" onclick="this.parentElement.parentElement.remove(); stopCount--;" style="background:#df5050; color:#fff; border:0; border-radius:5px; width:30px; height:30px; cursor:pointer;">×</button>
+        </div>
+    `;
+    $("#extra-stops").appendChild(div);
+});
+
+async function sendInternalMessage() {
+    const input = $("#internal-chat-input");
+    const msg = input.value.trim();
+    if (!msg) return;
+    try {
+        await fetchJson("/api/admin/internal-chat", { method: "POST", body: { message: msg } });
+        input.value = "";
+        loadInternalChat();
+    } catch {}
+}
+
+async function loadInternalChat() {
+    try {
+        const { messages } = await fetchJson("/api/admin/internal-chat");
+        $("#internal-chat-body").innerHTML = messages.map(m => `
+            <div class="msg ${m.sender === 'admin' ? 'msg-admin' : 'msg-other'}">
+                ${escapeHtml(m.message)}
+                <div style="font-size:9px; opacity:0.7; margin-top:4px;">${new Date(m.created_at).toLocaleTimeString()}</div>
+            </div>
+        `).join("");
+        $("#internal-chat-body").scrollTop = $("#internal-chat-body").scrollHeight;
+    } catch {}
+}
+
+$("#send-internal-chat")?.addEventListener("click", sendInternalMessage);
+$("#internal-chat-input")?.addEventListener("keypress", (e) => { if (e.key === 'Enter') sendInternalMessage(); });
+
+async function checkNotifications() {
+    try {
+        const { unreadCount, notifications } = await fetchJson("/api/admin/notifications");
+        const badge = $("#notification-badge");
+        if (unreadCount > 0) {
+            badge.textContent = unreadCount;
+            badge.hidden = false;
+        } else {
+            badge.hidden = true;
+        }
+        if (notifications.length) {
+            $("#notification-list").innerHTML = notifications.map(n => `
+                <div class="notification-item">
+                    <b>${escapeHtml(n.title)}</b>
+                    <p>${escapeHtml(n.body)}</p>
+                    <small>${new Date(n.created_at).toLocaleString()}</small>
+                </div>
+            `).join("");
+        }
+    } catch {}
+}
+
+setInterval(checkNotifications, 15000);
+setInterval(loadInternalChat, 10000);
+
+$("#recenter")?.addEventListener("click", () => {
+    if (selectedLocations.pickup) map.flyTo([selectedLocations.pickup.lat, selectedLocations.pickup.lon], 15);
+    else if (connectedDrivers.length) map.flyTo([connectedDrivers[0].location.lat, connectedDrivers[0].location.lon], 13);
+});
+
+window.markTripContacted = async (id) => {
+    showToast(`Llamando al pasajero del viaje ${id}...`);
+    // Logic to mark as contacted on backend could be added here
+};
+
 async function adminLogout() {
-    document.cookie = "taxote_admin_session=; Path=/; Expires=Thu, 01 Jan 1970 00:00:01 GMT;";
+    try {
+        await fetch("/api/admin/logout", { method: "POST" });
+    } catch {}
     location.href = "/admin-login.html";
 }
+window.adminLogout = adminLogout;
+
+

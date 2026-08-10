@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#071f33" />
+    <title>TAXOTE User | Tu viaje en República Dominicana</title>
+    <link rel="icon" type="image/svg+xml" href="favicon.svg?v=20260806-1" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Outfit:wght@500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="css/user.css?v=20260806-5" />
+  </head>
+  <body>
+    <header class="user-topbar">
+      <a class="user-brand" href="user.html" aria-label="Inicio TAXOTE User"><span class="user-brand-mark">T</span><span>TAXOTE <small>User</small></span></a>
+      <a class="dispatch-link" href="/">Central de reservas</a>
+    </header>
+
+    <main class="user-page">
+      <section id="auth-view" class="auth-layout">
+        <aside class="welcome-panel">
+          <span class="welcome-badge">REPÚBLICA DOMINICANA</span>
+          <h1>Tu próximo viaje comienza aquí.</h1>
+          <p>Crea tu cuenta, reutiliza tus direcciones y solicita recogida sin volver a escribir todo.</p>
+          <div class="welcome-steps">
+            <div><b>1</b><span><strong>Identifícate</strong><small>Cuenta o acceso como invitado</small></span></div>
+            <div><b>2</b><span><strong>Elige la ruta</strong><small>Recogida y destino en RD</small></span></div>
+            <div><b>3</b><span><strong>Solicita el viaje</strong><small>Queda guardado para la central</small></span></div>
+          </div>
+        </aside>
+
+        <section class="auth-card" aria-labelledby="auth-title">
+          <span class="section-kicker">BIENVENIDO A TAXOTE</span>
+          <h2 id="auth-title">Accede para viajar</h2>
+          <p class="auth-intro">Usa tu número dominicano o crea una cuenta nueva.</p>
+
+          <div class="auth-tabs" role="tablist" aria-label="Acceso a TAXOTE User">
+            <button id="login-tab" class="active" type="button" role="tab" aria-selected="true" aria-controls="login-panel">INICIAR SESIÓN</button>
+            <button id="register-tab" type="button" role="tab" aria-selected="false" aria-controls="register-panel">CREAR CUENTA</button>
+          </div>
+
+          <form id="login-form" class="auth-form" autocomplete="on">
+            <div id="login-panel" role="tabpanel" aria-labelledby="login-tab">
+              <label class="user-field"><span>Número de teléfono</span><div class="phone-entry"><b>+1</b><input id="login-phone" type="tel" inputmode="numeric" autocomplete="tel" placeholder="809 555 0000" required /></div></label>
+              <label class="user-field"><span>Contraseña</span><div class="password-entry"><input id="login-password" type="password" autocomplete="current-password" placeholder="Tu contraseña" required /><button class="show-password" type="button" aria-label="Mostrar contraseña">Ver</button></div></label>
+              <button class="primary-action" type="submit">INICIAR SESIÓN <span>→</span></button>
+            </div>
+          </form>
+
+          <form id="register-form" class="auth-form" autocomplete="on" hidden>
+            <div id="register-panel" role="tabpanel" aria-labelledby="register-tab">
+              <label class="user-field"><span>Nombre completo</span><input id="register-name" type="text" autocomplete="name" placeholder="Nombre y apellido" required /></label>
+              <label class="user-field"><span>Número de teléfono</span><div class="phone-entry"><b>+1</b><input id="register-phone" type="tel" inputmode="numeric" autocomplete="tel" placeholder="809 555 0000" required /></div></label>
+              <label class="user-field"><span>Correo electrónico</span><input id="register-email" type="email" autocomplete="email" placeholder="nombre@correo.com" required /></label>
+              <div class="password-grid">
+                <label class="user-field"><span>Contraseña</span><input id="register-password" type="password" autocomplete="new-password" placeholder="Mínimo 8 caracteres" required /></label>
+                <label class="user-field"><span>Repetir contraseña</span><input id="register-confirm" type="password" autocomplete="new-password" placeholder="Repítela" required /></label>
+              </div>
+              <button class="primary-action" type="submit">CREAR CUENTA <span>→</span></button>
+            </div>
+          </form>
+
+          <div class="guest-divider"><span>o continúa sin cuenta</span></div>
+          <button id="guest-entry" class="guest-action" type="button">Entrar como invitado</button>
+          <p class="privacy-note">Tus datos y direcciones se guardan únicamente para facilitar tus próximos viajes.</p>
+        </section>
+      </section>
+
+      <section id="ride-view" class="ride-view" hidden>
+        <header class="ride-heading">
+          <div><span class="section-kicker">SOLICITAR VIAJE</span><h1 id="ride-greeting">Hola</h1><p>Indica dónde te recogemos y a dónde quieres ir.</p></div>
+          <button id="leave-ride-view" class="secondary-action" type="button">Cerrar sesión</button>
+        </header>
+
+        <div class="ride-layout">
+          <aside class="profile-column">
+            <section id="registered-summary" class="profile-card" hidden>
+              <span class="profile-avatar" id="registered-avatar">TU</span>
+              <div><small>CUENTA TAXOTE</small><h2 id="registered-name"></h2><p id="registered-contact"></p></div>
+            </section>
+
+            <section id="guest-identity" class="profile-card guest-profile" hidden>
+              <div class="card-heading"><div><small>ACCESO INVITADO</small><h2>¿Quién viaja?</h2></div><span class="guest-chip">Invitado</span></div>
+              <label class="user-field"><span>Número de teléfono</span><div class="lookup-entry"><div class="phone-entry"><b>+1</b><input id="guest-phone" type="tel" inputmode="numeric" autocomplete="tel" placeholder="809 555 0000" /></div><button id="lookup-guest" type="button" aria-label="Buscar teléfono y direcciones anteriores">⌕</button></div></label>
+              <p id="guest-lookup-status" class="lookup-status">Escribe el teléfono y toca la lupa.</p>
+              <label class="user-field"><span>Nombre completo</span><input id="guest-name" type="text" autocomplete="name" placeholder="Se pedirá sólo si el número es nuevo" /></label>
+            </section>
+
+            <section id="pending-rides-card" class="pending-rides-card">
+              <div class="card-heading">
+                <div><small>EN CURSO</small><h2>Servicios activos</h2></div>
+                <span id="pending-count" class="pending-count">0</span>
+              </div>
+              <p id="pending-empty" class="pending-empty">Cuando confirmes un viaje, aparecerá aquí hasta que el conductor lo termine.</p>
+              <div id="pending-rides" class="pending-rides"></div>
+            </section>
+
+            <section class="history-card">
+              <div class="card-heading"><div><small>HISTORIAL</small><h2>Direcciones anteriores</h2></div><span id="history-count" class="history-count">0</span></div>
+              <p id="history-empty" class="history-empty">Cuando guardes un viaje, tus direcciones aparecerán aquí.</p>
+              <div id="address-history" class="address-history"></div>
+            </section>
+          </aside>
+
+          <section class="trip-card">
+            <div class="trip-progress"><span class="active">1</span><i></i><span>2</span><i></i><span>3</span></div>
+            <h2>¿Cuál es tu ruta?</h2>
+            <p class="trip-help">Escribe tres letras y elige una dirección completa de República Dominicana.</p>
+
+            <form id="ride-form">
+              <div class="route-entry user-address-field" data-kind="pickup">
+                <span class="route-dot pickup-dot">A</span>
+                <label class="user-field"><span>Dirección de recogida</span><div class="address-entry"><input id="user-pickup" type="search" autocomplete="off" placeholder="Calle, sector, municipio o provincia" /><button id="search-user-pickup" type="button" aria-label="Buscar recogida">⌕</button></div></label>
+                <div id="user-pickup-results" class="user-address-results" hidden></div>
+              </div>
+
+              <div class="route-connector"></div>
+
+              <div class="route-entry user-address-field" data-kind="destination">
+                <span class="route-dot destination-dot">B</span>
+                <label class="user-field"><span>Dirección de destino</span><div class="address-entry"><input id="user-destination" type="search" autocomplete="off" placeholder="Calle, sector, municipio o provincia" /><button id="search-user-destination" type="button" aria-label="Buscar destino">⌕</button></div></label>
+                <div id="user-destination-results" class="user-address-results" hidden></div>
+              </div>
+
+              <div id="ride-summary" class="ride-summary"><span>✦</span><p>Selecciona la recogida y el destino.</p></div>
+              <button id="request-ride" class="primary-action request-action" type="submit">VER PRECIO Y CONFIRMAR <span>→</span></button>
+            </form>
+
+            <div id="ride-confirmation" class="ride-confirmation" hidden>
+              <span class="confirmation-mark">✓</span>
+              <div><small>SOLICITUD GUARDADA</small><h3>Tu viaje fue enviado a TAXOTE</h3><p id="confirmation-id"></p></div>
+            </div>
+          </section>
+        </div>
+      </section>
+    </main>
+
+    <div id="fare-modal" class="modal-overlay" hidden>
+      <section class="modal-card fare-modal-card" role="dialog" aria-modal="true" aria-labelledby="fare-modal-title">
+        <button class="modal-close" type="button" data-close-modal="fare" aria-label="Cerrar confirmación">×</button>
+        <span class="modal-kicker">CONFIRMA TU SERVICIO</span>
+        <h2 id="fare-modal-title">Revisa tu viaje</h2>
+        <p class="modal-intro">Comprueba los puntos A y B antes de solicitar un conductor.</p>
+
+        <div class="confirmation-route">
+          <div class="confirmation-stop"><span class="stop-letter pickup-stop">A</span><div><small>RECOGIDA</small><p id="fare-pickup"></p></div></div>
+          <i></i>
+          <div class="confirmation-stop"><span class="stop-letter destination-stop">B</span><div><small>DESTINO</small><p id="fare-destination"></p></div></div>
+        </div>
+
+        <div class="estimate-panel">
+          <div class="estimate-price"><small>PRECIO DEL SERVICIO</small><strong id="fare-price">RD$0</strong><span>Tarifa estimada TAXOTE</span></div>
+          <div class="estimate-details"><span><b id="fare-distance">0 km</b>distancia</span><span><b id="fare-duration">0 min</b>tiempo aprox.</span></div>
+        </div>
+        <p class="estimate-note">El precio se calcula según la ruta seleccionada. Confirma únicamente si los datos son correctos.</p>
+        <div class="modal-actions"><button class="modal-back" type="button" data-close-modal="fare">CORREGIR RUTA</button><button id="confirm-ride" class="modal-confirm" type="button">CONFIRMAR Y PEDIR <span>→</span></button></div>
+      </section>
+    </div>
+
+    <div id="cancel-modal" class="modal-overlay" hidden>
+      <section class="modal-card cancellation-modal-card" role="dialog" aria-modal="true" aria-labelledby="cancel-modal-title">
+        <button class="modal-close" type="button" data-close-modal="cancel" aria-label="Cerrar cancelación">×</button>
+        <div class="cancel-heading"><span class="cancel-symbol">×</span><div><span class="modal-kicker danger">CANCELAR SERVICIO</span><h2 id="cancel-modal-title">¿Por qué deseas cancelar?</h2></div></div>
+        <p class="modal-intro">Selecciona un motivo. Esto nos ayuda a mejorar la experiencia TAXOTE.</p>
+
+        <form id="cancellation-form">
+          <fieldset class="cancel-reasons">
+            <legend>Motivo de cancelación</legend>
+            <label><input type="radio" name="cancellation-reason" value="Cambié de planes" /><span>Cambié de planes</span></label>
+            <label><input type="radio" name="cancellation-reason" value="Me equivoqué en la dirección" /><span>Me equivoqué en la dirección</span></label>
+            <label><input type="radio" name="cancellation-reason" value="El conductor tarda demasiado" /><span>El conductor tarda demasiado</span></label>
+            <label><input type="radio" name="cancellation-reason" value="No encontré al conductor" /><span>No encontré al conductor</span></label>
+            <label><input type="radio" name="cancellation-reason" value="Precio más alto de lo esperado" /><span>Precio más alto de lo esperado</span></label>
+            <label><input type="radio" name="cancellation-reason" value="El conductor me pidió cancelar" /><span>El conductor me pidió cancelar</span></label>
+            <label><input type="radio" name="cancellation-reason" value="Tuve una emergencia" /><span>Tuve una emergencia</span></label>
+            <label><input type="radio" name="cancellation-reason" value="Otro motivo" /><span>Otro motivo</span></label>
+          </fieldset>
+          <label class="cancel-note"><span>Comentario opcional</span><textarea id="cancellation-note" maxlength="300" placeholder="Cuéntanos brevemente qué ocurrió"></textarea></label>
+          <div class="modal-actions"><button class="modal-back" type="button" data-close-modal="cancel">VOLVER</button><button id="submit-cancellation" class="danger-confirm" type="submit"><span>×</span> CANCELAR SERVICIO</button></div>
+        </form>
+      </section>
+    </div>
+
+    <div id="ride-chat-modal" class="modal-overlay" hidden>
+      <section class="modal-card ride-chat-modal-card" role="dialog" aria-modal="true" aria-labelledby="ride-chat-title">
+        <button id="close-ride-chat" class="modal-close" type="button" aria-label="Cerrar chat">×</button>
+        <span class="modal-kicker">CHAT DEL SERVICIO</span>
+        <h2 id="ride-chat-title">Habla con tu conductor</h2>
+        <p class="modal-intro">Puedes enviar texto o una foto. El chat visible se elimina después de 24 horas y se cierra al terminar el viaje.</p>
+        <div id="ride-chat-messages" class="ride-chat-messages" aria-live="polite"></div>
+        <form id="ride-chat-form" class="ride-chat-form">
+          <textarea id="ride-chat-input" maxlength="1000" rows="2" placeholder="Escribe un mensaje"></textarea>
+          <div class="ride-chat-actions">
+            <label class="ride-chat-photo"><input id="ride-chat-photo" type="file" accept="image/*" />FOTO</label>
+            <span id="ride-chat-photo-name"></span>
+            <button type="submit">ENVIAR</button>
+          </div>
+        </form>
+      </section>
+    </div>
+
+    <div id="user-toast" class="user-toast" role="status" aria-live="polite"></div>
+    <script src="js/user.js?v=20260806-5"></script>
+  </body>
+</html>

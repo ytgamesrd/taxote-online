@@ -1,0 +1,340 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0b2e47" />
+    <title>TAXOTE | Central de reservas</title>
+    <link rel="icon" type="image/svg+xml" href="favicon.svg?v=20260806-1" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Outfit:wght@500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="assets/leaflet/leaflet.css" />
+    <link rel="stylesheet" href="styles.css?v=20260806-26" />
+  </head>
+  <body>
+    <header class="topbar">
+      <button id="menu-button" class="icon-button menu-button" aria-label="Abrir menú" aria-controls="side-menu" aria-expanded="false">
+        <span></span><span></span><span></span>
+      </button>
+      <a class="brand" href="#" aria-label="TAXOTE inicio">
+        <span class="brand-mark">T</span>
+        <span>TAXOTE</span>
+      </a>
+      <div class="top-actions">
+        <button class="availability"><i></i> Disponible <span class="chevron">⌄</span></button>
+        <a id="header-chat-link" class="header-icon header-chat-link" href="/drivers-chat.html" aria-label="Chat de conductores" title="Chat de conductores">▤<b id="header-chat-badge" hidden>0</b></a>
+        <button id="notification-button" class="header-icon notification" type="button" aria-label="Notificaciones" aria-controls="notification-panel" aria-expanded="false">♟<b id="notification-badge" hidden>0</b></button>
+      </div>
+      <section id="notification-panel" class="notification-panel" hidden aria-label="Notificaciones administrativas">
+        <header><div><small>CENTRO DE AVISOS</small><h2>Notificaciones</h2></div><button id="read-all-notifications" type="button">Marcar leídas</button></header>
+        <div id="notification-list" class="notification-list"><p class="notification-empty">No tienes avisos pendientes.</p></div>
+      </section>
+    </header>
+
+    <div id="drawer-overlay" class="drawer-overlay" hidden></div>
+    <aside id="side-menu" class="side-menu" aria-hidden="true">
+      <div class="side-menu-head">
+        <a class="drawer-brand" href="#"><span class="brand-mark">T</span><span>TAXOTE</span></a>
+        <button id="close-menu" class="close-menu" aria-label="Cerrar menú">×</button>
+      </div>
+      <nav class="side-navigation" aria-label="Navegación principal">
+        <a href="/"><span>＋</span> Nueva reserva</a>
+        <a href="/drivers.html"><span>♙</span> Conductores</a>
+        <a href="/deposits.html"><span>💰</span> Depósitos</a>
+        <a href="/history.html"><span>◷</span> Historial de viajes</a>
+        <a href="/drivers-chat.html"><span>▤</span> Chat de conductores</a>
+        <a href="/conversation-history.html"><span>▧</span> Historial de conversación</a>
+        <a href="/user.html"><span>◉</span> TAXOTE User</a>
+        <a href="#"><span>▦</span> Reportes</a>
+        <a href="#"><span>⚙</span> Configuración</a>
+      </nav>
+      <div class="side-menu-footer"><p><b>Administrador</b><small>Operaciones TAXOTE</small></p></div>
+    </aside>
+
+    <main class="workspace">
+      <aside id="booking-panel" class="booking-panel">
+        <div class="panel-heading">
+          <h1>Agregar reservas</h1>
+        </div>
+
+        <form id="booking-form">
+          <div class="form-grid two-cols">
+            <label class="field select-field">
+              <span>Tipo de servicio</span>
+              <select id="service-type">
+                <option>Registrado</option>
+                <option>Invitado</option>
+              </select>
+            </label>
+            <label class="field select-field">
+              <span>Cuándo</span>
+              <select id="travel-time">
+                <option>Viajar ahora</option>
+                <option>Programar viaje</option>
+              </select>
+            </label>
+          </div>
+
+          <div class="customer-row customer-picker-wrap">
+            <label class="field grow">
+              <span>Cliente registrado</span>
+              <div class="customer-search-control"><span>⌕</span><input id="customer" type="search" placeholder="Buscar por nombre o teléfono" autocomplete="off" /><button id="registered-history-search" type="button" aria-label="Ver historial permanente del cliente" title="Ver viajes anteriores" disabled>⌕</button><button id="clear-customer" type="button" aria-label="Limpiar cliente">×</button></div>
+            </label>
+            <div id="customer-results" class="customer-results" hidden></div>
+          </div>
+          <div id="selected-customer" class="selected-customer" hidden></div>
+          <div id="guest-fields" class="guest-fields" hidden>
+            <div class="field guest-phone-field"><span>Teléfono de República Dominicana</span><div class="guest-phone-lookup"><div class="phone-control"><b>+1</b><input id="guest-phone" type="tel" inputmode="numeric" placeholder="809 000 0000" maxlength="12" autocomplete="tel" /></div><button id="guest-history-search" type="button" aria-label="Buscar nombre y viajes anteriores del teléfono" title="Buscar viajes anteriores">⌕</button></div></div>
+            <p id="guest-history-status" class="guest-history-status">Escribe el teléfono y toca la lupa.</p>
+            <label class="field guest-name-field"><span>Nombre del invitado</span><input id="guest-name" type="text" placeholder="Nombre y apellido" autocomplete="name" /></label>
+          </div>
+
+          <div class="route-block">
+            <div class="route-line"><span></span></div>
+            <div class="route-fields">
+              <label class="field address-field">
+                <span>Recogida</span>
+                <div class="address-control pickup-control"><input id="pickup" type="search" placeholder="Calle, sector, municipio o provincia" autocomplete="off" /><button id="search-pickup" type="button" aria-label="Buscar dirección de recogida">⌕</button></div>
+                <div id="pickup-results" class="address-results" hidden></div>
+                <button id="pick-pickup-map" class="pick-on-map pickup-pick" type="button"><i></i> Elegir recogida en el mapa</button>
+              </label>
+              <div id="extra-stops" class="extra-stops"></div>
+              <label class="field address-field">
+                <span>Destino</span>
+                <div class="address-control destination-control"><input id="destination" type="search" placeholder="Calle, sector, municipio o provincia" autocomplete="off" /><button id="search-destination" type="button" aria-label="Buscar dirección de destino">⌕</button></div>
+                <div id="destination-results" class="address-results" hidden></div>
+                <button id="pick-destination-map" class="pick-on-map destination-pick" type="button"><i></i> Elegir destino en el mapa</button>
+              </label>
+            </div>
+            <button id="add-stop" class="add-stop" type="button" aria-label="Añadir parada">+</button>
+          </div>
+
+          <div id="address-provider-status" class="address-provider-status" role="status"><i>RD</i><span>Direcciones de República Dominicana</span></div>
+
+          <div id="route-notice" class="notice"><span>✦</span> Selecciona origen y destino para ver las opciones disponibles.</div>
+
+          <label class="field full-field">
+            <span>Nota para el conductor</span>
+            <input id="dispatch-note" type="text" placeholder="Ej. Recoger en la entrada principal" />
+          </label>
+
+          <label class="field full-field">
+            <span>Buscar conductor activo u ocupado</span>
+            <div class="driver-search-control">
+              <input id="driver-assign-search" type="search" placeholder="Buscar conductor por nombre, vehículo o estado" autocomplete="off" />
+              <div id="driver-assigned-summary" class="driver-assigned-summary">Sin conductor asignado</div>
+              <input id="driver-assign-id" type="hidden" value="" />
+            </div>
+            <div id="driver-search-results" class="driver-search-results" hidden></div>
+            <small class="field-help">Escribe al menos 2 letras para filtrar conductores activos y ocupados.</small>
+          </label>
+
+          <div class="form-grid three-cols compact-fields">
+            <label class="field select-field">
+              <span>Pasajeros</span>
+              <select id="passenger-count-select"><option>1 pasajero</option><option>2 pasajeros</option><option>3 pasajeros</option></select>
+            </label>
+            <label class="field select-field">
+              <span>Paradas</span>
+              <select id="stop-count-select"><option value="0">Sin paradas</option><option value="1">1 parada</option><option value="2">2 paradas</option><option value="3">3 paradas</option></select>
+            </label>
+            <label class="field select-field">
+              <span>Pago</span>
+              <select id="payment-method-select"><option>Efectivo</option><option>Tarjeta</option><option>Cuenta empresa</option></select>
+            </label>
+          </div>
+
+          <label class="check-label"><input type="checkbox" /> <span>Requiere servicio especial</span></label>
+          <label class="field select-field full-field">
+            <span>Servicio especial</span>
+            <select><option>No necesito un servicio especial</option><option>Silla para niño</option><option>Acceso para silla de ruedas</option></select>
+          </label>
+          <label class="field full-field">
+            <span>Observación para despacho</span>
+            <input type="text" placeholder="Añadir instrucción interna" />
+          </label>
+
+          <div class="form-actions">
+            <button id="clear-form" class="button button-light" type="reset">↺ Limpiar</button>
+            <button class="button button-primary" type="submit">Añadir viaje <span>→</span></button>
+          </div>
+        </form>
+
+        <div id="booking-confirmation-modal" class="dispatch-modal-overlay" hidden>
+          <section class="dispatch-cancel-card" role="dialog" aria-modal="true" aria-labelledby="booking-confirmation-title">
+            <button id="close-booking-confirmation" class="dispatch-modal-close" type="button" aria-label="Cerrar confirmación">×</button>
+            <div class="dispatch-cancel-heading"><span>✓</span><div><small>CONFIRMAR RESERVA</small><h2 id="booking-confirmation-title">Revisa los detalles del viaje</h2></div></div>
+            <div id="booking-confirmation-content" class="dispatch-cancel-trip">
+              <p><strong>Recogida:</strong> <span id="booking-confirmation-pickup"></span></p>
+              <p><strong>Destino:</strong> <span id="booking-confirmation-destination"></span></p>
+              <p><strong>Paradas:</strong></p>
+              <ul id="booking-confirmation-stops"></ul>
+              <p><strong>Conductor:</strong> <span id="booking-confirmation-driver"></span></p>
+              <p><strong>Servicio:</strong> <span id="booking-confirmation-time"></span></p>
+              <p><strong>Pasajeros:</strong> <span id="booking-confirmation-passengers"></span></p>
+              <p><strong>Pago:</strong> <span id="booking-confirmation-payment"></span></p>
+              <p><strong>Precio estimado:</strong> <span id="booking-confirmation-price"></span></p>
+              <p><strong>Cliente:</strong> <span id="booking-confirmation-customer"></span></p>
+              <p><strong>Nota:</strong> <span id="booking-confirmation-note"></span></p>
+            </div>
+            <div class="dispatch-modal-actions">
+              <button id="cancel-booking" type="button">VOLVER</button>
+              <button id="confirm-booking" class="confirm-dispatch-cancel" type="button"><span>✓</span> CONFIRMAR RESERVA</button>
+            </div>
+          </section>
+        </div>
+      </aside>
+
+      <section class="map-section" aria-label="Mapa de operaciones">
+        <div class="panel-resize-handle booking-resize-handle" data-resize-panel="booking" role="separator" aria-orientation="vertical" aria-label="Cambiar ancho del panel de reservas" tabindex="0"></div>
+        <div class="panel-resize-handle drivers-resize-handle" data-resize-panel="drivers" role="separator" aria-orientation="vertical" aria-label="Cambiar ancho del panel de conductores" tabindex="0"></div>
+        <div class="map-card" id="map-card">
+          <button class="map-control map-floating-control" id="recenter">⌖ Centrar mapa</button>
+          <div id="live-map" class="live-map" aria-label="Mapa interactivo de República Dominicana"></div>
+          <svg class="map-art" viewBox="0 0 1000 650" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+            <defs>
+              <pattern id="grid" width="84" height="84" patternUnits="userSpaceOnUse"><path d="M84 0H0V84" fill="none" stroke="#dce9e9" stroke-width="1"/></pattern>
+              <filter id="shadow"><feDropShadow dx="0" dy="3" stdDeviation="4" flood-opacity=".22"/></filter>
+            </defs>
+            <rect width="1000" height="650" fill="#e8f1ee"/>
+            <path d="M0 490 C85 455 113 512 196 485 S330 504 413 478 S590 516 664 480 S820 495 1000 448 V650 H0Z" fill="#7ed2e3"/>
+            <path d="M0 69 C122 20 220 103 326 65 S513 24 643 80 S830 36 1000 71" fill="none" stroke="#bae0b9" stroke-width="94" opacity=".6"/>
+            <path d="M-20 255 C112 202 170 291 282 245 S459 202 584 265 S776 233 1030 293" fill="none" stroke="#c9e7bd" stroke-width="105" opacity=".65"/>
+            <rect width="1000" height="650" fill="url(#grid)"/>
+            <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M-20 285 C89 287 139 230 242 274 S395 276 483 224 S650 249 741 206 S900 207 1025 142" stroke="#d6dedf" stroke-width="18"/>
+              <path d="M-20 285 C89 287 139 230 242 274 S395 276 483 224 S650 249 741 206 S900 207 1025 142" stroke="#fff" stroke-width="10"/>
+              <path d="M72 603 C169 502 235 490 323 439 S476 422 580 348 S748 295 954 333" stroke="#d6dedf" stroke-width="17"/>
+              <path d="M72 603 C169 502 235 490 323 439 S476 422 580 348 S748 295 954 333" stroke="#fff" stroke-width="9"/>
+              <path d="M164 -15 C215 100 248 172 231 271 S304 398 267 527" stroke="#e2e8e6" stroke-width="13"/>
+              <path d="M164 -15 C215 100 248 172 231 271 S304 398 267 527" stroke="#fff" stroke-width="7"/>
+              <path d="M471 11 C419 103 446 184 495 229 S526 347 488 420 S461 525 517 650" stroke="#e2e8e6" stroke-width="13"/>
+              <path d="M471 11 C419 103 446 184 495 229 S526 347 488 420 S461 525 517 650" stroke="#fff" stroke-width="7"/>
+              <path d="M789 1 C705 96 748 154 700 206 S753 331 720 414 S789 501 925 584" stroke="#e2e8e6" stroke-width="13"/>
+              <path d="M789 1 C705 96 748 154 700 206 S753 331 720 414 S789 501 925 584" stroke="#fff" stroke-width="7"/>
+            </g>
+            <g fill="none" stroke="#00a86b" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M52 440 C137 391 141 320 247 306 S377 345 447 269 S573 257 630 184 S782 111 946 149" stroke-width="11"/>
+              <path d="M92 559 C193 513 245 464 343 440 S430 461 499 401 S593 293 720 324 S872 288 990 201" stroke-width="10"/>
+              <path d="M322 79 C332 159 404 178 405 245 S357 347 430 378 S482 466 544 493" stroke-width="8"/>
+              <path d="M572 96 C542 141 580 198 630 184 S662 212 703 254" stroke-width="8"/>
+              <path d="M692 512 C755 492 758 432 820 406 S904 442 990 423" stroke-width="8"/>
+            </g>
+            <g fill="#6a7c89" font-family="DM Sans, sans-serif" font-size="13" font-weight="600">
+              <text x="387" y="204">Los Prados</text><text x="535" y="318">Piantini</text><text x="286" y="383">Gazcue</text><text x="657" y="397">Ensanche Naco</text><text x="430" y="541">Malecón</text><text x="755" y="170">Santo Domingo Este</text><text x="103" y="240">Los Alcarrizos</text>
+            </g>
+            <g filter="url(#shadow)">
+              <g transform="translate(405 320)"><path d="M0-22c-12 0-21 9-21 21 0 16 21 36 21 36S21 15 21-1C21-13 12-22 0-22Z" fill="#007c57"/><circle cy="-1" r="7" fill="white"/></g>
+              <g transform="translate(564 250)"><path d="M0-22c-12 0-21 9-21 21 0 16 21 36 21 36S21 15 21-1C21-13 12-22 0-22Z" fill="#0d405d"/><circle cy="-1" r="7" fill="white"/></g>
+              <g transform="translate(703 360)"><path d="M0-18c-10 0-18 8-18 18 0 14 18 31 18 31s18-17 18-31c0-10-8-18-18-18Z" fill="#e35d5d"/><circle cy="0" r="5" fill="white"/></g>
+            </g>
+          </svg>
+          <div class="map-options">
+            <div class="map-options-title">Opciones del mapa</div>
+            <label><input id="map-standard" checked type="radio" name="map-style" /> Estándar</label>
+            <label><input id="map-light" type="radio" name="map-style" /> Tráfico</label>
+          </div>
+          <div class="map-legend"><span><i class="legend-line good"></i> Fluido</span><span><i class="legend-line busy"></i> Moderado</span><span><i class="legend-line slow"></i> Lento</span></div>
+          <div class="map-zoom"><button>+</button><button>−</button></div>
+          <div class="map-scale">500 m</div>
+        </div>
+      </section>
+
+      <aside id="drivers-panel" class="drivers-panel">
+        <div class="drivers-heading">
+          <div><h2>Lista de conductores</h2></div>
+        </div>
+        <div class="search-row"><span>⌕</span><input id="connected-driver-search" type="search" placeholder="Buscar conductor" /></div>
+        <div class="driver-tabs">
+          <button class="active" type="button" disabled>Disponibles <b id="available-driver-count">0</b></button>
+          <button type="button" disabled>Ocupados <b id="busy-driver-count">0</b></button>
+        </div>
+        <div id="connected-drivers-list" class="drivers-list" hidden></div>
+        <div id="connected-drivers-empty" class="fleet-empty-state">
+          <span>♙</span>
+          <h3>Sin conductores conectados</h3>
+          <p>Los conductores reales aparecerán aquí cuando se registren e inicien sesión en TAXOTE Driver.</p>
+        </div>
+        <div id="driver-app-status" class="driver-app-status"><i></i> Esperando conexión con TAXOTE Driver</div>
+      </aside>
+    </main>
+
+    <section id="active-trips" class="trips-section">
+      <div class="trips-header">
+        <div><span class="eyebrow">SEGUIMIENTO</span><h2>Viajes activos</h2></div>
+        <div class="trip-stats"><span><b id="current-trip-count">0</b> Actuales</span><span><b id="today-trip-count">0</b> Hoy</span></div>
+        <div class="trip-search-tools">
+          <label class="trip-global-search"><span>⌕</span><input id="trip-search" type="search" placeholder="Buscar en todos los viajes" aria-label="Buscar en todos los viajes" /></label>
+          <span id="filtered-trip-count" class="filtered-trip-count">0 resultados</span>
+          <button id="clear-trip-filters" class="clear-trip-filters" type="button">Limpiar filtros</button>
+          <button id="refresh-trips" class="refresh-trips" type="button" aria-label="Actualizar viajes" title="Actualizar viajes">↻</button>
+        </div>
+      </div>
+      <div class="trip-table-wrap">
+        <table>
+          <thead>
+            <tr class="trip-column-headings"><th>Cancelar</th><th>Viaje</th><th>Estado</th><th>Pasajero</th><th>Teléfono</th><th>Conductor</th><th>Recogida</th><th>Destino</th><th>Fecha y hora</th></tr>
+            <tr class="trip-filter-row">
+              <th><span class="filter-action-label">Acción</span></th>
+              <th><input id="filter-trip-id" type="search" placeholder="Código…" aria-label="Filtrar por código de viaje" /></th>
+              <th><select id="filter-trip-status" aria-label="Filtrar por estado"><option value="">Todos los estados</option><option value="pending">Pendiente</option><option value="accepted">Aceptado</option><option value="driver_arriving">Conductor en camino</option><option value="arrived">Conductor llegó</option><option value="in_progress">En viaje</option></select></th>
+              <th><input id="filter-trip-passenger" type="search" placeholder="Nombre…" aria-label="Filtrar por pasajero" /></th>
+              <th><input id="filter-trip-phone" type="search" inputmode="tel" placeholder="Teléfono…" aria-label="Filtrar por teléfono" /></th>
+              <th><input id="filter-trip-driver" type="search" placeholder="Conductor…" aria-label="Filtrar por conductor" /></th>
+              <th><input id="filter-trip-pickup" type="search" placeholder="Recogida…" aria-label="Filtrar por dirección de recogida" /></th>
+              <th><input id="filter-trip-destination" type="search" placeholder="Destino…" aria-label="Filtrar por dirección de destino" /></th>
+              <th><select id="filter-trip-date" aria-label="Filtrar por fecha"><option value="">Cualquier fecha</option><option value="today">Hoy</option><option value="7days">Últimos 7 días</option><option value="30days">Últimos 30 días</option></select></th>
+            </tr>
+          </thead>
+          <tbody id="trip-table-body">
+            <tr id="empty-trips-row"><td colspan="9" class="empty-trips">Los viajes nuevos aparecerán aquí cuando sean creados.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <div id="dispatch-cancel-modal" class="dispatch-modal-overlay" hidden>
+      <section class="dispatch-cancel-card" role="dialog" aria-modal="true" aria-labelledby="dispatch-cancel-title">
+        <button id="close-dispatch-cancel" class="dispatch-modal-close" type="button" aria-label="Cerrar cancelación">×</button>
+        <div class="dispatch-cancel-heading"><span>×</span><div><small>CANCELACIÓN DESDE LA CENTRAL</small><h2 id="dispatch-cancel-title">Cancelar servicio</h2></div></div>
+        <p id="dispatch-cancel-trip" class="dispatch-cancel-trip"></p>
+        <p class="dispatch-cancel-help">Selecciona el motivo. La cancelación se aplicará inmediatamente y quedará registrada.</p>
+        <form id="dispatch-cancel-form">
+          <fieldset class="dispatch-cancel-reasons">
+            <legend>Motivo de cancelación</legend>
+            <label><input type="radio" name="dispatch-cancel-reason" value="El cliente solicitó cancelar" /><span>El cliente solicitó cancelar</span></label>
+            <label><input type="radio" name="dispatch-cancel-reason" value="Solicitud duplicada" /><span>Solicitud duplicada</span></label>
+            <label><input type="radio" name="dispatch-cancel-reason" value="Me equivoqué en la dirección" /><span>Dirección incorrecta</span></label>
+            <label><input type="radio" name="dispatch-cancel-reason" value="Pasajero no se presentó" /><span>Pasajero no se presentó</span></label>
+            <label><input type="radio" name="dispatch-cancel-reason" value="No hay conductores disponibles" /><span>No hay conductores disponibles</span></label>
+            <label><input type="radio" name="dispatch-cancel-reason" value="Tuve una emergencia" /><span>Emergencia del pasajero</span></label>
+            <label><input type="radio" name="dispatch-cancel-reason" value="Error de la central" /><span>Error de la central</span></label>
+            <label><input type="radio" name="dispatch-cancel-reason" value="Otro motivo" /><span>Otro motivo</span></label>
+          </fieldset>
+          <label class="dispatch-cancel-note"><span>Comentario opcional</span><textarea id="dispatch-cancel-note" maxlength="300" placeholder="Añade información para el historial del servicio"></textarea></label>
+          <div class="dispatch-modal-actions"><button id="back-dispatch-cancel" type="button">VOLVER</button><button id="confirm-dispatch-cancel" class="confirm-dispatch-cancel" type="submit"><span>×</span> CANCELAR SERVICIO</button></div>
+        </form>
+      </section>
+    </div>
+
+    <div id="phone-history-modal" class="dispatch-modal-overlay" hidden>
+      <section class="phone-history-card" role="dialog" aria-modal="true" aria-labelledby="phone-history-title">
+        <button id="close-phone-history" class="dispatch-modal-close" type="button" aria-label="Cerrar viajes recientes">×</button>
+        <div class="phone-history-heading"><div><small>HISTORIAL POR TELÉFONO</small><h2 id="phone-history-title">Viajes recientes</h2></div><span id="phone-history-count">0 viajes</span></div>
+        <p id="phone-history-person" class="phone-history-person"></p>
+        <div class="phone-history-table-wrap">
+          <table>
+            <thead><tr><th>Fecha</th><th>Teléfono</th><th>Recogida</th><th>Destino</th><th></th></tr></thead>
+            <tbody id="phone-history-body"><tr><td colspan="5" class="phone-history-empty">Buscando viajes…</td></tr></tbody>
+          </table>
+        </div>
+        <div class="phone-history-actions"><button id="dismiss-phone-history" type="button">Cerrar</button></div>
+      </section>
+    </div>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    <script src="assets/leaflet/leaflet.js"></script>
+    <script src="app.js?v=20260806-28"></script>
+  </body>
+</html>

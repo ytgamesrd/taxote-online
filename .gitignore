@@ -1,0 +1,9 @@
+.env
+.data/
+.android-sdk/
+.android-toolchain/
+.android-user/
+.gradle/
+android-driver/.gradle/
+android-driver/local.properties
+android-driver/app/build/

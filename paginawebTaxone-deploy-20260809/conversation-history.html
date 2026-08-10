@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="theme-color" content="#071f33" />
+  <title>Historial de conversación | TAXOTE</title>
+  <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Outfit:wght@600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/conversation-history.css?v=20260806-1" />
+  <style>.archive-modal[hidden],.archive-drawer-overlay[hidden],.archive-toast[hidden]{display:none!important}</style>
+</head>
+<body>
+  <header class="archive-topbar"><button id="archive-menu-button" type="button" aria-label="Abrir menú">☰</button><a href="/"><span>T</span><b>TAXOTE</b></a><a href="/drivers-chat.html">Chat en vivo</a></header>
+  <div id="archive-drawer-overlay" class="archive-drawer-overlay" hidden></div>
+  <aside id="archive-drawer" class="archive-drawer" aria-hidden="true">
+    <div class="archive-drawer-head"><a href="/"><span>T</span><b>TAXOTE</b></a><button id="archive-close-menu" type="button">×</button></div>
+    <nav>
+      <a href="/">＋ Nueva reserva</a>
+      <a href="/drivers.html">♙ Conductores</a>
+      <a href="/history.html">◷ Historial de viajes</a>
+      <a href="/drivers-chat.html">▤ Chat de conductores</a>
+      <a class="active" href="/conversation-history.html">▧ Historial de conversación</a>
+      <a href="/user.html">◉ TAXOTE User</a>
+    </nav>
+    <p><b>Administrador</b><small>Operaciones TAXOTE</small></p>
+  </aside>
+
+  <main class="archive-page">
+    <header class="archive-heading"><div><small>REGISTRO PERMANENTE</small><h1>Historial de conversación</h1><p>Conversaciones del administrador, conductores y pasajeros. Sólo se eliminan manualmente.</p></div><button id="archive-refresh" type="button">↻ Actualizar</button></header>
+    <section class="archive-card">
+      <div class="archive-toolbar"><label><span>⌕</span><input id="archive-search" type="search" placeholder="Buscar conductor, pasajero, viaje o teléfono" /></label><b id="archive-count">0 conversaciones</b></div>
+      <div class="archive-table-wrap">
+        <table><thead><tr><th>Acción</th><th>Conversación</th><th>Detalle</th><th>Último mensaje</th><th>Mensajes</th><th>Eliminar</th></tr></thead><tbody id="archive-body"><tr><td colspan="6" class="archive-empty">Cargando conversaciones…</td></tr></tbody></table>
+      </div>
+    </section>
+  </main>
+
+  <div id="conversation-modal" class="archive-modal" hidden>
+    <section role="dialog" aria-modal="true" aria-labelledby="conversation-modal-title">
+      <button id="close-conversation-modal" class="archive-modal-close" type="button">×</button>
+      <small>CONVERSACIÓN ARCHIVADA</small><h2 id="conversation-modal-title">Conversación</h2>
+      <div id="conversation-messages" class="conversation-messages"></div>
+      <div class="archive-modal-actions"><button id="delete-open-conversation" type="button">Eliminar conversación</button><button id="dismiss-conversation-modal" type="button">Cerrar</button></div>
+    </section>
+  </div>
+  <div id="archive-toast" class="archive-toast" hidden></div>
+  <script src="js/conversation-history.js?v=20260806-1"></script>
+</body>
+</html>

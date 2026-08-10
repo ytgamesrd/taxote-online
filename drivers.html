@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#071f33" />
+    <title>Conductores | TAXOTE</title>
+    <link rel="icon" type="image/svg+xml" href="favicon.svg?v=20260806-1" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Outfit:wght@500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="styles.css?v=20260806-26" />
+    <link rel="stylesheet" href="drivers.css?v=20260806-1" />
+  </head>
+  <body class="drivers-admin-body">
+    <header class="topbar">
+      <button id="menu-button" class="menu-button" aria-label="Abrir menú" aria-expanded="false" aria-controls="side-menu"><span></span><span></span><span></span></button>
+      <a class="brand" href="/"><span class="brand-mark">T</span><span>TAXOTE</span></a>
+      <div class="top-actions"><a class="driver-app-link" href="/drivers-chat.html">Chat de conductores</a></div>
+    </header>
+    <div id="drawer-overlay" class="drawer-overlay" hidden></div>
+    <aside id="side-menu" class="side-menu" aria-hidden="true">
+      <div class="side-menu-head"><a class="drawer-brand" href="/"><span class="brand-mark">T</span><span>TAXOTE</span></a><button id="close-menu" class="close-menu" aria-label="Cerrar menú">×</button></div>
+      <nav class="side-navigation" aria-label="Navegación principal">
+        <a href="/"><span>＋</span> Nueva reserva</a>
+        <a class="active" href="/drivers.html"><span>♙</span> Conductores</a>
+        <a href="/deposits.html"><span>💰</span> Depósitos</a>
+        <a href="/history.html"><span>◷</span> Historial de viajes</a>
+<a href="/drivers-chat.html"><span>▤</span> Chat de conductores</a><a href="/conversation-history.html"><span>▧</span> Historial de conversación</a><a href="/user.html"><span>◉</span> TAXOTE User</a>
+      </nav>
+      <div class="side-menu-footer"><p><b>Administrador</b><small>Operaciones TAXOTE</small></p></div>
+    </aside>
+
+    <main class="drivers-admin-page">
+      <header class="admin-titlebar"><div><span>GESTIÓN DE FLOTA</span><h1>Conductores</h1><p>Revisa cada registro antes de permitir el acceso a TAXOTE Driver.</p></div><button id="refresh-drivers" type="button">↻ Actualizar</button></header>
+      <section class="driver-metrics"><button data-status-filter="pending" class="selected"><span>Pendientes</span><b id="pending-count">0</b></button><button data-status-filter="active"><span>Activos</span><b id="active-count">0</b></button><button data-status-filter="cancelled"><span>Cancelados</span><b id="cancelled-count">0</b></button><button data-status-filter="all"><span>Total</span><b id="total-count">0</b></button></section>
+      <section class="drivers-table-card">
+        <div class="table-tools"><div><h2>Solicitudes de conductores</h2><small id="result-count">0 resultados</small></div><label class="admin-search">⌕ <input id="driver-search" type="search" placeholder="Buscar nombre, teléfono, placa…" /></label></div>
+        <div class="drivers-table-wrap"><table><thead><tr><th>Conductor</th><th>Contacto</th><th>Vehículo</th><th>Placa</th><th>Estado</th><th>Registro</th><th></th></tr></thead><tbody id="drivers-body"></tbody></table></div>
+        <div id="drivers-empty" class="drivers-empty" hidden><span>♙</span><h3>No hay conductores en esta lista</h3><p>Las nuevas solicitudes aparecerán aquí.</p></div>
+      </section>
+    </main>
+
+    <div id="driver-detail-modal" class="admin-modal" hidden>
+      <section class="driver-detail" role="dialog" aria-modal="true" aria-labelledby="detail-name">
+        <button id="close-driver-detail" class="detail-close" type="button" aria-label="Cerrar">×</button>
+        <header class="detail-header"><div class="detail-avatar" id="detail-avatar">DR</div><div><span id="detail-id">EXPEDIENTE</span><h2 id="detail-name">Conductor</h2><p id="detail-date">—</p></div><span id="detail-status" class="status-badge">Pendiente</span></header>
+        <div class="detail-content">
+          <section><h3>Billetera y Puntos</h3><dl class="detail-grid"><div><dt>Puntos disponibles</dt><dd><b id="detail-points" style="font-size: 20px; color: #064b44;">0</b></dd></div><div><dt>Modificar puntos</dt><dd style="display: flex; gap: 8px;"><input type="number" id="edit-points-input" style="width: 80px; padding: 4px 8px; border: 1px solid #ddd; border-radius: 4px;" /><button id="save-points" type="button" style="padding: 4px 12px; background: #0b2e47; color: #fff; border: none; border-radius: 4px; cursor: pointer;">Guardar</button></dd></div></dl></section>
+          <section><h3>Información personal</h3><dl class="detail-grid"><div><dt>Correo</dt><dd id="detail-email">—</dd></div><div><dt>Teléfono</dt><dd id="detail-phone">—</dd></div><div><dt>Cédula</dt><dd id="detail-cedula">—</dd></div><div><dt>Último acceso</dt><dd id="detail-login">Nunca</dd></div></dl></section>
+          <section><h3>Vehículo registrado</h3><dl class="detail-grid"><div><dt>Tipo</dt><dd id="detail-vehicle-type">—</dd></div><div><dt>Marca</dt><dd id="detail-vehicle-brand">—</dd></div><div><dt>Modelo</dt><dd id="detail-vehicle-model">—</dd></div><div><dt>Color</dt><dd id="detail-color">—</dd></div><div><dt>Placa</dt><dd id="detail-plate" class="plate-value">—</dd></div></dl></section>
+          <section><h3>Documentos enviados</h3><div class="document-grid"><a id="id-front-link" target="_blank"><span>Frente de la cédula</span><img id="detail-id-front" alt="Frente de la cédula" /></a><a id="id-back-link" target="_blank"><span>Parte posterior</span><img id="detail-id-back" alt="Parte posterior de la cédula" /></a><a id="vehicle-link" target="_blank"><span>Fotografía del vehículo</span><img id="detail-vehicle-photo" alt="Vehículo del conductor" /></a></div></section>
+        </div>
+        <footer class="detail-actions"><button id="delete-driver" class="delete-driver" type="button">Eliminar registro</button><div><button id="cancel-driver" class="cancel-driver" type="button">Cancelar cuenta</button><button id="activate-driver" class="activate-driver" type="button">✓ Activar conductor</button></div></footer>
+      </section>
+    </div>
+    <div id="admin-toast" class="toast" role="status" aria-live="polite"></div>
+    <script src="drivers.js?v=20260806-2"></script>
+  </body>
+</html>
