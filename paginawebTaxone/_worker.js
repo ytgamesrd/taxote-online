@@ -350,6 +350,8 @@ async function handleApi(request, env, url) {
     const ride = await db.prepare("SELECT * FROM rides WHERE id=?").bind(rideId).first();
     return json({ ok: true, ride: await driverRideView(db, ride) }, 201, headers);
   }
+
+  if (path === "/api/route") {
       const coords = url.searchParams.get("coordinates");
       const resp = await fetch(`https://router.project-osrm.org/route/v1/driving/${coords}?overview=full&geometries=geojson`);
       const body = await resp.json();
