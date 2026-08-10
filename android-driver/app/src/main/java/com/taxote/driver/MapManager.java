@@ -133,14 +133,16 @@ public class MapManager {
         String status = ride.optString("status", "pending");
 
         // Add current location if active
-        Double latVal = null;
-        Double lonVal = null;
+        double latVal = 0;
+        double lonVal = 0;
+        boolean hasLoc = false;
         if (preferences != null) {
             double lat = Double.longBitsToDouble(preferences.getLong("last_lat_bits", Double.doubleToRawLongBits(Double.NaN)));
             double lon = Double.longBitsToDouble(preferences.getLong("last_lon_bits", Double.doubleToRawLongBits(Double.NaN)));
             if (Double.isFinite(lat) && Double.isFinite(lon)) {
                 latVal = lat;
                 lonVal = lon;
+                hasLoc = true;
             }
         }
 
@@ -156,17 +158,17 @@ public class MapManager {
             coordinates.append(';').append(destination.optDouble("lon")).append(',').append(destination.optDouble("lat"));
         } else {
             // Navigation mode: From current location to NEXT point only
-            if (latVal != null && lonVal != null) {
+            if (hasLoc) {
                 coordinates.append(lonVal).append(',').append(latVal).append(';');
             }
 
-            int guideIndex = resolveGuideWaypointIndex(ride);
-            if (guideIndex == 0) {
+            int gIdx = resolveGuideWaypointIndex(ride);
+            if (gIdx == 0) {
                 // Guide only to Pickup (A)
                 coordinates.append(pickup.optDouble("lon")).append(',').append(pickup.optDouble("lat"));
-            } else if (stops != null && guideIndex <= stops.length()) {
+            } else if (stops != null && gIdx <= stops.length()) {
                 // Guide to current stop (C)
-                JSONObject targetStop = stops.optJSONObject(guideIndex - 1);
+                JSONObject targetStop = stops.optJSONObject(gIdx - 1);
                 if (targetStop != null) coordinates.append(targetStop.optDouble("lon")).append(',').append(targetStop.optDouble("lat"));
             } else {
                 // Guide to Destination (B)
@@ -176,35 +178,37 @@ public class MapManager {
 
         String encodedCoordinates = Uri.encode(coordinates.toString());
         
-        final Double finalLat = latVal;
-        final Double finalLon = lonVal;
+        final double finalLat = latVal;
+        final double finalLon = lonVal;
+        final boolean finalHasLoc = hasLoc;
 
         // DATOS PARA RENDER INICIAL (MARCADORES A, B, C AL INSTANTE)
-        String actionLabel = "LLEGUÉ";
         int guideIndex = resolveGuideWaypointIndex(ride);
-        if (guideIndex == 0) actionLabel = "LLEGUÉ";
-        else if (guideIndex > 0 && (stops == null || guideIndex <= stops.length())) actionLabel = "LLEGUÉ";
-        else if ("arrived".equals(status)) actionLabel = "Iniciar Viaje";
-        else if ("in_progress".equals(status)) actionLabel = "Terminar";
+        String labelStr = "LLEGUÉ";
+        if (guideIndex == 0) labelStr = "LLEGUÉ";
+        else if (guideIndex > 0 && (stops == null || guideIndex <= stops.length())) labelStr = "LLEGUÉ";
+        else if ("arrived".equals(status)) labelStr = "Iniciar Viaje";
+        else if ("in_progress".equals(status)) labelStr = "Terminar";
 
+        final String labelStrFinal = labelStr;
         String note = ride.optString("note", "");
         String payment = ride.optString("paymentMethod", "Efectivo");
         int passengers = ride.optInt("passengerCount", 1);
-        String passengerName = ride.optString("passengerName", "Pasajero");
-        String scheduledAt = ride.optString("createdAt", ""); 
+        String pName = ride.optString("passengerName", "Pasajero");
+        String schedAt = ride.optString("createdAt", ""); 
         if (ride.has("scheduledAt") && !ride.isNull("scheduledAt")) {
-            scheduledAt = ride.optString("scheduledAt");
+            schedAt = ride.optString("scheduledAt");
         }
 
-        final String initialScript = String.format(Locale.US, 
+        final String initScript = String.format(Locale.US, 
             "window.showTaxoteRoute(%s, %s, %s, [], %d, '%s', %d, %d, %.1f, %d, '%s', '%s', '%s', '%s');",
             pickup.toString(), (stops == null ? "[]" : stops.toString()), 
-            destination.toString(), guideIndex, actionLabel,
+            destination.toString(), guideIndex, labelStrFinal,
             ride.optInt("priceDop"), ride.optInt("durationMin"), ride.optDouble("distanceKm"),
             passengers, payment, note.replace("'", "\\'"),
-            passengerName.replace("'", "\\'"), scheduledAt);
+            pName.replace("'", "\\'"), schedAt);
         
-        webView.post(() -> webView.evaluateJavascript(initialScript, null));
+        webView.post(() -> webView.evaluateJavascript(initScript, null));
 
         // PEDIR RUTA A OSRM PARA DIBUJAR LA LÍNEA AZUL
         ApiClient.get("/api/route?coordinates=" + encodedCoordinates, response -> {
@@ -233,43 +237,48 @@ public class MapManager {
             }
             routePoints.append(']');
             
-            // Extract trip summary for the new UI
-            double displayKm = ride.optDouble("distanceKm", 0.0);
-            int displayMin = ride.optInt("durationMin", 0);
-            
-            // If we are in guidance mode (accepted, arrived, etc.), calculate relative to next waypoint
-            if (guideIndex >= 0 && finalLat != null && finalLon != null) {
+            double dKm = ride.optDouble("distanceKm", 0.0);
+            int dMin = ride.optInt("durationMin", 0);
+            double distToNext = Double.MAX_VALUE;
+
+            if (guideIndex >= 0 && finalHasLoc) {
                 JSONObject target = null;
                 if (guideIndex == 0) target = pickup;
                 else if (stops != null && guideIndex <= stops.length()) target = stops.optJSONObject(guideIndex - 1);
                 else target = destination;
                 
                 if (target != null) {
-                    double targetLat = target.optDouble("lat");
-                    double targetLon = target.optDouble("lon");
-                    double dist = haversine(finalLat, finalLon, targetLat, targetLon);
-                    displayKm = dist;
-                    displayMin = Math.max(1, (int)(dist / 25.0 * 60.0)); // Estimate 25km/h avg
+                    double dist = haversine(finalLat, finalLon, target.optDouble("lat"), target.optDouble("lon"));
+                    distToNext = dist * 1000.0;
+                    dKm = dist;
+                    dMin = Math.max(1, (int)(dist / 25.0 * 60.0));
                 }
             }
             
-            // Calculate ETA
             java.util.Calendar eta = java.util.Calendar.getInstance();
-            eta.add(java.util.Calendar.MINUTE, displayMin);
+            eta.add(java.util.Calendar.MINUTE, dMin);
             String etaStr = new java.text.SimpleDateFormat("HH:mm", Locale.US).format(eta.getTime());
             
-            String targetAddress = "Destino";
-            if (guideIndex == 0) targetAddress = pickup.optString("address", "Punto A");
-            else if (guideIndex > 0 && stops != null && guideIndex <= stops.length()) targetAddress = "Parada C" + guideIndex;
-            else targetAddress = destination.optString("address", "Punto B");
+            String tAddr = pickup.optString("address", "Punto A");
+            if (guideIndex > 0 && stops != null && guideIndex <= stops.length()) tAddr = "Parada C" + guideIndex;
+            else if (guideIndex > 0) tAddr = destination.optString("address", "Punto B");
+
+            boolean isArr = (guideIndex == 0) || (guideIndex > 0 && stops != null && guideIndex <= stops.length());
+            boolean locked = isArr && distToNext > 50.0;
+            final String finalDisplayLabel = locked ? "Acércate a 50m" : labelStrFinal;
 
             String script = String.format(Locale.US, 
                 "window.updateRouteLine(%s); " +
                 "document.getElementById('tripTime').innerHTML = '%d<span>min</span>'; " +
                 "document.getElementById('tripStats').textContent = '%.1f km • %s'; " +
-                "document.getElementById('navStreet').textContent = '%s';", 
+                "document.getElementById('navStreet').textContent = '%s'; " +
+                "document.getElementById('tripActionButton').textContent = '%s'; " +
+                "document.getElementById('tripActionButton').style.opacity = %s; " +
+                "document.getElementById('tripActionButton').onclick = %s;", 
                 routePoints.toString(),
-                displayMin, displayKm, etaStr, targetAddress);
+                dMin, dKm, etaStr, tAddr, finalDisplayLabel,
+                locked ? "0.5" : "1.0",
+                locked ? "function(){TaxoteAPI.onAction('distance_locked')}" : "function(){TaxoteAPI.onAction('primary')}");
             
             webView.post(() -> webView.evaluateJavascript(script, null));
         });
@@ -280,18 +289,15 @@ public class MapManager {
         JSONArray stops = ride.optJSONArray("stops");
         int stopCount = stops == null ? 0 : stops.length();
         String status = ride.optString("status", "pending");
-        
-        // 0: Pickup (A), 1..stopCount: Stops (C), stopCount+1: Destination (B)
-        if ("pending".equals(status)) return -1; // Special value for offers to show all points
-        if ("accepted".equals(status) || "driver_arriving".equals(status)) return 0; // Guide to Pickup
-        if ("arrived".equals(status)) return (stopCount > 0) ? 1 : stopCount + 1; // Guide to first stop or B
-        if ("in_progress".equals(status)) return stopCount + 1; // Simplify to B for now
-        
+        if ("pending".equals(status)) return -1;
+        if ("accepted".equals(status) || "driver_arriving".equals(status)) return 0;
+        if ("arrived".equals(status)) return (stopCount > 0) ? 1 : stopCount + 1;
+        if ("in_progress".equals(status)) return stopCount + 1;
         return 0;
     }
 
     private double haversine(double lat1, double lon1, double lat2, double lon2) {
-        double R = 6371; // Earth radius in km
+        double R = 6371;
         double dLat = Math.toRadians(lat2 - lat1);
         double dLon = Math.toRadians(lon2 - lon1);
         double a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
@@ -303,9 +309,7 @@ public class MapManager {
 
     public void clearRoute() {
         this.currentRide = null;
-        if (mapReady) {
-            webView.post(() -> webView.evaluateJavascript("window.clearTaxoteRoute()", null));
-        }
+        if (mapReady) webView.post(() -> webView.evaluateJavascript("window.clearTaxoteRoute()", null));
     }
 
     public void showQueuedRide(JSONObject ride) {
@@ -315,15 +319,9 @@ public class MapManager {
     }
 
     public void hideQueuedRide() {
-        if (!mapReady) return;
-        webView.post(() -> webView.evaluateJavascript("window.hideQueuedRide()", null));
+        if (!mapReady) webView.post(() -> webView.evaluateJavascript("window.hideQueuedRide()", null));
     }
     
-    public void resetLocationCentering() {
-        this.locationCentered = false;
-    }
-
-    public void destroy() {
-        webView.destroy();
-    }
+    public void resetLocationCentering() { this.locationCentered = false; }
+    public void destroy() { webView.destroy(); }
 }
