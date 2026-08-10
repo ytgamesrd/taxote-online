@@ -476,6 +476,6 @@ pickupInput?.addEventListener("input", (e) => searchAddress(e.target.value, "#pi
 destinationInput?.addEventListener("input", (e) => searchAddress(e.target.value, "#destination-results", "destination"));
 
 async function adminLogout() {
-    document.cookie = "taxote_admin_session=; Path=/; Secure; SameSite=Lax; HttpOnly; Max-Age=0";
+    try { await fetch("/api/admin/logout", { method: "POST", credentials: "include" }); } catch {}
     location.href = "/admin-login.html";
 }
