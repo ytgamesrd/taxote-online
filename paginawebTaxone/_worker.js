@@ -156,17 +156,14 @@ async function handleApi(request, env, url, headers) {
     const body = await bodyJson(request);
     const p = phone(body.phone), e = clean(body.email).toLowerCase(), c = clean(body.cedula), pl = clean(body.vehiclePlate).toUpperCase();
 
-    // NUCLEAR FIX: Check if driver already exists to give a better message or delete them
-    const existing = await db.prepare("SELECT id, status FROM drivers WHERE phone=? OR email=? OR cedula=? OR vehicle_plate=?").bind(p, e, c, pl).first();
+    // NUCLEAR FIX: Delete any driver matching these UNIQUE fields if they are not active
+    const { results: conflicts } = await db.prepare("SELECT id FROM drivers WHERE (phone=? OR email=? OR cedula=? OR vehicle_plate=?) AND status != 'active'").bind(p, e, c, pl).all();
 
-    if (existing) {
-        if (existing.status === 'active') {
-            throw new HttpError(409, "Ya existe un conductor activo con estos datos.");
-        } else {
-            // Delete the old non-active record to allow re-registration
-            await db.prepare("DELETE FROM driver_documents WHERE driver_id=?").bind(existing.id).run();
-            await db.prepare("DELETE FROM driver_sessions WHERE driver_id=?").bind(existing.id).run();
-            await db.prepare("DELETE FROM drivers WHERE id=?").bind(existing.id).run();
+    if (conflicts && conflicts.length > 0) {
+        for (const conflict of conflicts) {
+            await db.prepare("DELETE FROM driver_documents WHERE driver_id=?").bind(conflict.id).run();
+            await db.prepare("DELETE FROM driver_sessions WHERE driver_id=?").bind(conflict.id).run();
+            await db.prepare("DELETE FROM drivers WHERE id=?").bind(conflict.id).run();
         }
     }
 
