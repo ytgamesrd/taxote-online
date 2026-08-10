@@ -1,7 +1,6 @@
 package com.taxote.driver;
 
 import android.app.Activity;
-import android.app.AlertDialog;
 import android.content.Intent;
 import android.graphics.Bitmap;
 import android.net.Uri;
@@ -21,7 +20,6 @@ import android.widget.ViewFlipper;
 
 import org.json.JSONObject;
 
-import java.util.Calendar;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -38,6 +36,7 @@ public class RegisterActivity extends Activity {
     private ProgressBar stepProgress;
     private Button btnNext;
     private final ExecutorService imageExecutor = Executors.newSingleThreadExecutor();
+    private final android.os.Handler handler = new android.os.Handler(android.os.Looper.getMainLooper());
 
     // Campos del formulario
     private EditText regFirstName, regLastName, regCedula, regPlate, regYear, regEmail, regPhone, regPass;
@@ -48,12 +47,30 @@ public class RegisterActivity extends Activity {
     // Datos codificados
     private String dataProfile, dataIdFront, dataIdBack, dataVFront, dataVBack, dataVRight;
 
+    private final Runnable statusCheckTask = new Runnable() {
+        @Override public void run() {
+            if (viewFlipper.getDisplayedChild() == 7) {
+                checkActivationStatus();
+                handler.postDelayed(this, 10000); 
+            }
+        }
+    };
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_register);
         bindViews();
-        configureStep(0);
+        
+        boolean isPending = getSharedPreferences("taxote_driver", MODE_PRIVATE).getBoolean("registration_pending", false);
+        if (isPending) {
+            viewFlipper.setDisplayedChild(7);
+            configureStep(7);
+            handler.post(statusCheckTask);
+        } else {
+            configureStep(0);
+        }
+        
         configureActions();
         configureSpinners();
     }
@@ -99,8 +116,8 @@ public class RegisterActivity extends Activity {
         findViewById(R.id.btnPickVRight).setOnClickListener(v -> pickImage(PICK_V_RIGHT));
         findViewById(R.id.btnAcceptReg).setOnClickListener(v -> submitRegistration());
         findViewById(R.id.btnCancelReg).setOnClickListener(v -> {
-            viewFlipper.setDisplayedChild(4); // Vuelve a Detalles del Vehículo
-            configureStep(4);
+            viewFlipper.setDisplayedChild(5);
+            configureStep(5);
         });
         findViewById(R.id.btnGoHome).setOnClickListener(v -> finish());
     }
@@ -149,7 +166,7 @@ public class RegisterActivity extends Activity {
 
     private void configureStep(int step) {
         stepProgress.setProgress(step + 1);
-        String title = "Registro: Paso " + (step + 1);
+        String title = "Paso " + (step + 1);
         switch (step) {
             case 0: title = "Datos personales"; break;
             case 1: title = "Identidad (ID)"; break;
@@ -195,18 +212,41 @@ public class RegisterActivity extends Activity {
         return true;
     }
 
+    private void checkActivationStatus() {
+        String phone = getSharedPreferences("taxote_driver", MODE_PRIVATE).getString("pending_phone", "");
+        String pass = getSharedPreferences("taxote_driver", MODE_PRIVATE).getString("pending_password", "");
+        if (phone.isEmpty() || pass.isEmpty()) return;
+
+        try {
+            JSONObject body = new JSONObject();
+            body.put("phone", phone);
+            body.put("password", pass);
+            ApiClient.post("/api/driver/login", body, r -> {
+                if (r.isSuccessful()) {
+                    getSharedPreferences("taxote_driver", MODE_PRIVATE).edit()
+                        .remove("registration_pending")
+                        .apply();
+                    startActivity(new Intent(this, DashboardActivity.class));
+                    finish();
+                }
+            });
+        } catch (Exception ignored) {}
+    }
+
     private void submitRegistration() {
         btnNext.setEnabled(false);
         try {
             JSONObject b = new JSONObject();
+            final String phoneVal = value(regPhone);
+            final String passVal = value(regPass);
             b.put("firstName", value(regFirstName));
             b.put("lastName", value(regLastName));
             b.put("cedula", value(regCedula));
             b.put("dob", getDobString());
             b.put("email", value(regEmail));
-            b.put("phone", value(regPhone));
-            b.put("password", value(regPass));
-            b.put("passwordConfirm", value(regPass));
+            b.put("phone", phoneVal);
+            b.put("password", passVal);
+            b.put("passwordConfirm", passVal);
             b.put("vehicleBrand", regBrand.getSelectedItem());
             b.put("vehicleModel", regModel.getSelectedItem());
             b.put("vehicleYear", value(regYear));
@@ -222,12 +262,18 @@ public class RegisterActivity extends Activity {
             b.put("vehiclePhoto", dataVFront);
             b.put("vehicleBackPhoto", dataVBack);
             b.put("vehicleRightPhoto", dataVRight);
-            b.put("platePhoto", dataVBack); // Usamos trasera como respaldo si falta placa específica
+            b.put("platePhoto", dataVBack); 
 
             ApiClient.post("/api/driver/register", b, r -> {
                 if (r.isSuccessful()) {
+                    getSharedPreferences("taxote_driver", MODE_PRIVATE).edit()
+                        .putString("pending_phone", phoneVal)
+                        .putString("pending_password", passVal)
+                        .putBoolean("registration_pending", true)
+                        .apply();
                     viewFlipper.setDisplayedChild(7);
                     configureStep(7);
+                    handler.post(statusCheckTask);
                 } else {
                     btnNext.setEnabled(true);
                     toast(r.message());
@@ -262,13 +308,15 @@ public class RegisterActivity extends Activity {
             try {
                 String encoded = ImageUtils.toDataUrl(this, uri);
                 runOnUiThread(() -> {
-                    Bitmap bmp = ImageUtils.decodeBitmap(this, uri, 600);
-                    if (req == PICK_PROFILE) { dataProfile = encoded; imgProfilePreview.setImageBitmap(bmp); imgProfilePreview.setVisibility(View.VISIBLE); }
-                    else if (req == PICK_ID_FRONT) { dataIdFront = encoded; imgIdFrontPreview.setImageBitmap(bmp); imgIdFrontPreview.setVisibility(View.VISIBLE); }
-                    else if (req == PICK_ID_BACK) { dataIdBack = encoded; imgIdBackPreview.setImageBitmap(bmp); imgIdBackPreview.setVisibility(View.VISIBLE); }
-                    else if (req == PICK_V_FRONT) { dataVFront = encoded; imgVFrontPreview.setImageBitmap(bmp); imgVFrontPreview.setVisibility(View.VISIBLE); }
-                    else if (req == PICK_V_BACK) { dataVBack = encoded; imgVBackPreview.setImageBitmap(bmp); imgVBackPreview.setVisibility(View.VISIBLE); }
-                    else if (req == PICK_V_RIGHT) { dataVRight = encoded; imgVRightPreview.setImageBitmap(bmp); imgVRightPreview.setVisibility(View.VISIBLE); }
+                    try {
+                        Bitmap bmp = ImageUtils.decodeBitmap(this, uri, 600);
+                        if (req == PICK_PROFILE) { dataProfile = encoded; imgProfilePreview.setImageBitmap(bmp); imgProfilePreview.setVisibility(View.VISIBLE); }
+                        else if (req == PICK_ID_FRONT) { dataIdFront = encoded; imgIdFrontPreview.setImageBitmap(bmp); imgIdFrontPreview.setVisibility(View.VISIBLE); }
+                        else if (req == PICK_ID_BACK) { dataIdBack = encoded; imgIdBackPreview.setImageBitmap(bmp); imgIdBackPreview.setVisibility(View.VISIBLE); }
+                        else if (req == PICK_V_FRONT) { dataVFront = encoded; imgVFrontPreview.setImageBitmap(bmp); imgVFrontPreview.setVisibility(View.VISIBLE); }
+                        else if (req == PICK_V_BACK) { dataVBack = encoded; imgVBackPreview.setImageBitmap(bmp); imgVBackPreview.setVisibility(View.VISIBLE); }
+                        else if (req == PICK_V_RIGHT) { dataVRight = encoded; imgVRightPreview.setImageBitmap(bmp); imgVRightPreview.setVisibility(View.VISIBLE); }
+                    } catch (Exception e) { toast("Error al procesar vista previa."); }
                 });
             } catch (Exception e) { runOnUiThread(() -> toast("Error en foto.")); }
         });
@@ -276,6 +324,7 @@ public class RegisterActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        handler.removeCallbacks(statusCheckTask);
         imageExecutor.shutdown();
         super.onDestroy();
     }

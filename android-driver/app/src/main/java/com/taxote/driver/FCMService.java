@@ -15,6 +15,8 @@ import androidx.core.app.NotificationCompat;
 import com.google.firebase.messaging.FirebaseMessagingService;
 import com.google.firebase.messaging.RemoteMessage;
 
+import org.json.JSONObject;
+
 public class FCMService extends FirebaseMessagingService {
     private static final String TAG = "FCMService";
 
@@ -43,7 +45,18 @@ public class FCMService extends FirebaseMessagingService {
     }
 
     private void sendRegistrationToServer(String token) {
-        // This will be implemented to link the device with the driver on Cloudflare
+        // Guardar token localmente por si no hay sesión iniciada
+        getSharedPreferences("taxote_driver", MODE_PRIVATE).edit().putString("fcm_token", token).apply();
+        
+        // Intentar enviar si hay sesión
+        JSONObject body = new JSONObject();
+        try { body.put("token", token); } catch (Exception ignored) {}
+        
+        ApiClient.post("/api/driver/fcm-token", body, response -> {
+            if (response.isSuccessful()) {
+                Log.d(TAG, "Token FCM enviado con éxito al servidor");
+            }
+        });
     }
 
     private void sendNotification(String title, String messageBody) {

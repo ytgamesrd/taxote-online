@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="navy">#082A42</color>
+    <color name="navy_dark">#051D2F</color>
+    <color name="navy_soft">#EAF2F7</color>
+    <color name="yellow">#F4C542</color>
+    <color name="yellow_soft">#FFF6D8</color>
+    <color name="ink">#102A3D</color>
+    <color name="muted">#607687</color>
+    <color name="line">#D7E2E9</color>
+    <color name="surface">#FFFFFF</color>
+    <color name="background">#F3F7F9</color>
+    <color name="success">#138A5B</color>
+    <color name="danger">#D64550</color>
+</resources>

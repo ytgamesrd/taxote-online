@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">TAXOTE Driver</string>
+    <string name="login">INICIAR SESIÓN</string>
+    <string name="register">REGISTRARSE</string>
+</resources>
