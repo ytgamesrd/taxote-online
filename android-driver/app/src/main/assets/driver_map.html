@@ -9,11 +9,10 @@
     #mapWrapper{position:absolute;inset:0;overflow:hidden;}
 
     #map{
-        width: 220% !important; height: 220% !important;
+        width: 180% !important; height: 180% !important;
         position: absolute !important;
-        top: -60% !important; left: -60% !important;
-        transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-        will-change: transform;
+        top: -40% !important; left: -40% !important;
+        transition: transform 0.3s linear;
     }
 
     .leaflet-control-attribution{display:none}
@@ -41,10 +40,9 @@
         transform: translateY(110%);
         transition: transform 0.4s cubic-bezier(0.165, 0.84, 0.44, 1);
         max-height: 85vh;
-        touch-action: none;
     }
     #tripPanel.expanded{transform:translateY(0) !important;}
-    #tripPanel.active-mode:not(.expanded){transform:translateY(calc(100% - 145px)) !important;}
+    #tripPanel.active-mode:not(.expanded){transform:translateY(calc(100% - 135px)) !important;}
     #tripPanel.offer-mode:not(.expanded){transform:translateY(calc(100% - 180px)) !important;}
 
     #tripHandle{width:64px;height:7px;background:#dfe3e8;border-radius:5px;margin:0 auto 15px auto;cursor:grab;flex:0 0 auto;padding:10px 0;background-clip:content-box;}
@@ -57,7 +55,7 @@
     .client-avatar { width: 40px; height: 40px; background: #0b2e47; color: #fff; border-radius: 50%; display: grid; place-items: center; font-weight: 800; font-size: 16px; }
     .client-name { font: 800 20px Arial; color: #000; }
 
-    .location-list { display: flex; flex-direction: column; gap: 10px; position: relative; padding-left: 20px; }
+    .location-list { display: flex; flex-direction: column; gap: 8px; position: relative; padding-left: 20px; }
     .location-list::before { content: ''; position: absolute; left: 4px; top: 10px; bottom: 10px; width: 2px; background: #dee2e6; }
     .location-entry { position: relative; font-size: 14px; color: #444; line-height: 1.3; }
     .location-entry::after { content: ''; position: absolute; left: -20px; top: 6px; width: 10px; height: 10px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
@@ -70,7 +68,7 @@
     .price-val { font: 800 26px Arial; color: #2e7d32; }
     .time-val { font: 700 15px Arial; color: #666; }
 
-    .note-row { background: #fff8e1; border-left: 4px solid #ffc107; padding: 12px; border-radius: 6px; font-size: 14px; font-style: italic; color: #555; }
+    .note-row { background: #fff8e1; border-left: 4px solid #ffc107; padding: 10px; border-radius: 4px; font-size: 14px; font-style: italic; color: #555; }
 
     .btn{
         height:58px; border-radius:16px; display:grid; place-items:center;
@@ -80,9 +78,9 @@
     .btn-green{background:#2e7d32; color:#fff; flex:1.5;}
     .btn-black{background:#000; color:#fff; flex:1.5}
 
-    #tripTime{font:700 32px Arial;color:#c0392b;line-height:1}
+    #tripTime{font:700 30px Arial;color:#c0392b;line-height:1}
     #tripTime span{font-size:18px;margin-left:3px}
-    #tripStats{font:400 15px Arial;color:#666}
+    #tripStats{font:400 14px Arial;color:#666}
 
     #recenterBtn{
         position:absolute;bottom:calc(20px + env(safe-area-inset-bottom));right:20px;z-index:2500;
@@ -96,14 +94,13 @@
         display: grid; place-items: center; width: 42px; height: 42px;
         border-radius: 50%; border: 4.5px solid #fff; color: #fff;
         font: 800 18px Arial; box-shadow: 0 6px 15px rgba(0,0,0,0.4);
-        transition: transform 0.3s linear;
     }
     .point-a { background: #000; }
     .point-b { background: #1e88e5; }
     .point-c { background: #ffc107; color: #000; }
 
     .driver-car-container { z-index: 5000 !important; }
-    .driver-car{ display:block; width:42px; height:54px; position:relative; transition: transform 0.3s linear;}
+    .driver-car{ display:block; width:42px; height:54px; position:relative; }
     .driver-car svg{ display:block;width:100%;height:100%; filter: drop-shadow(0 3px 6px rgba(0,0,0,0.4)); }
 
     .car-pulse {
@@ -112,12 +109,25 @@
         border-radius: 50%; transform: scale(0.5); animation: pulse-ring 2.5s infinite; z-index: -1;
     }
     @keyframes pulse-ring { 0% { transform: scale(0.4); opacity: 0.8; } 100% { transform: scale(1.4); opacity: 0; } }
+
+    #queuedCard{
+        position:absolute;right:12px;top:calc(88px + env(safe-area-inset-top));z-index:2600;
+        width:min(250px,calc(100vw - 24px));background:#fff;border-radius:16px;
+        box-shadow:0 12px 30px rgba(0,0,0,.22);padding:14px;display:none;flex-direction:column;
+    }
   </style>
 </head>
 <body>
   <div id="mapWrapper"><div id="map"></div></div>
   <div id="navPanel"><div id="navIcon">A</div><div id="navText"><div id="navDistance">-- m</div><div id="navStreet">Calculando...</div></div></div>
   <div id="recenterBtn" onclick="recenterMap()">⌖</div>
+
+  <div id="queuedCard">
+    <b style="color:#064b44;font-size:12px">SERVICIO EN COLA</b>
+    <span id="queuedPrice" style="font-size:18px;font-weight:bold;color:#0b2e47">RD$ --</span>
+    <small id="queuedText" style="color:#666;margin:5px 0">Esperando...</small>
+    <button onclick="TaxoteAPI.onAction('queued_release')" style="background:#d32f2f;color:#fff;border:0;padding:10px;border-radius:8px;font-weight:bold">LIBERAR</button>
+  </div>
 
   <div id="tripPanel">
     <div id="tripHandle"></div>
@@ -157,36 +167,29 @@
 
     let routeLayers=[]; let driverMarker=null; let activeRoutePoints=[]; let currentWaypoints=[]; let nextWaypointIndex=-1;
     let currentBearing = 0; let lastPos = null;
-    let isGPSLock = true; let unlockTimer = null;
-    let mapState = 'IDLE'; // IDLE, OFFER, NAVIGATING
+    let isGPSLock = true;
+    let mapState = 'IDLE';
 
-    // PANEL SLIDING LOGIC
+    // PANEL SLIDING (CORREGIDO PARA DESLIZAR MEJOR)
     const panel = document.getElementById('tripPanel');
     const handle = document.getElementById('tripHandle');
     let touchStartY = 0;
 
-    handle.addEventListener('touchstart', (e) => { touchStartY = e.touches[0].clientY; panel.style.transition = 'none'; }, {passive:true});
+    handle.addEventListener('touchstart', (e) => { touchStartY = e.touches[0].clientY; panel.style.transition = 'none'; });
     handle.addEventListener('touchmove', (e) => {
         const diff = touchStartY - e.touches[0].clientY;
-        if (diff > 40) panel.classList.add('expanded');
-        if (diff < -40) panel.classList.remove('expanded');
-    }, {passive:true});
+        if (diff > 30) panel.classList.add('expanded');
+        if (diff < -30) panel.classList.remove('expanded');
+    });
     handle.addEventListener('touchend', () => { panel.style.transition = ''; });
 
-    // MAP INTERACTION LOGIC
+    // MAPA: STOP AUTOMATIC MOVEMENT ON TOUCH
     map.on('movestart zoomstart', (e) => {
-        if (!e.hard) { // User initiated
-            isGPSLock = false;
-            resetMapRotation();
-            clearTimeout(unlockTimer);
-            unlockTimer = setTimeout(() => { if(mapState !== 'OFFER') isGPSLock = true; }, 10000);
-        }
-    });
-
-    function resetMapRotation() {
+        if (e.hard) return; // Ignore internal camera movements
+        isGPSLock = false;
         document.getElementById('map').style.transform = 'rotateZ(0deg)';
         document.querySelectorAll('.point-marker').forEach(m => m.style.transform = 'rotate(0deg)');
-    }
+    });
 
     function carIcon(state,bearing){
       const svg=`<svg viewBox="0 0 64 96"><path d="M15 10C17 4 22 2 32 2s15 2 17 8l7 20v50c0 8-5 14-13 14H21C13 94 8 88 8 80V30z" fill="#f4c400" stroke="#071f33" stroke-width="3"/><path d="M17 26l5-14h20l5 14zM15 34h34v22H15zM18 63h28l4 16H14z" fill="#0b2e47"/><rect x="22" y="38" width="20" height="15" rx="4" fill="#fff"/><path d="M6 34H2v17h6M58 34h4v17h-6" fill="#071f33"/></svg>`;
@@ -215,6 +218,7 @@
       lastPos=pos;
       currentBearing = (Number(bearing)||0);
 
+      // SOLAMENTE SE MUEVE EL MAPA SI isGPSLock ES TRUE
       if(isGPSLock){
           const rot = -currentBearing;
           document.getElementById('map').style.transform = `rotateZ(${rot}deg)`;
@@ -223,6 +227,7 @@
           map.setView(offset, 17.5, {animate:true, hard:true});
       }
 
+      // EL CARRO SIEMPRE SE MUEVE
       if(!driverMarker) driverMarker=L.marker(pos,{icon:carIcon(state, isGPSLock?0:currentBearing),zIndexOffset:5000}).addTo(map);
       else { driverMarker.setLatLng(pos); driverMarker.setIcon(carIcon(state, isGPSLock?0:currentBearing)); }
 
@@ -242,23 +247,18 @@
               }
           } else {
               if (btn) btn.style.opacity = '1';
-              document.getElementById('navStreet').textContent = target.addr || 'Rumbo al destino';
+              document.getElementById('navStreet').textContent = target.addr || 'Destino';
           }
           document.getElementById('navPanel').style.transform = 'translateY(0)';
       }
     };
 
-    function recenterMap(){
-        isGPSLock=true;
-        clearTimeout(unlockTimer);
-        if(lastPos) window.updateDriverLocation(lastPos[0],lastPos[1],currentBearing,"busy",true);
-    }
+    function recenterMap(){ isGPSLock=true; if(lastPos) window.updateDriverLocation(lastPos[0],lastPos[1],currentBearing,"busy",true); }
 
     window.clearTaxoteRoute=function(){
-      mapState = 'IDLE';
-      isGPSLock = true;
+      isShowingOffer=false; isGPSLock=true; mapState='IDLE';
       document.body.classList.remove('active-mode-layout','offer-active');
-      resetMapRotation();
+      document.getElementById('map').style.transform='rotateZ(0deg)';
       panel.classList.remove('expanded','active-mode','offer-mode');
       routeLayers.forEach(l=>map.removeLayer(l)); routeLayers=[]; activeRoutePoints=[]; currentWaypoints=[];
       document.getElementById('navPanel').style.transform='translateY(-250%)';
