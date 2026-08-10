@@ -24,7 +24,6 @@ const customerResults = $("#customer-results");
 const selectedCustomerCard = $("#selected-customer");
 const guestFields = $("#guest-fields");
 const addressProviderStatus = $("#address-provider-status");
-const driverSideToggle = $("#driver-side-toggle");
 const driverAssignInput = $("#driver-assign-id");
 const bookingConfirmationModal = $("#booking-confirmation-modal");
 const bookingConfirmationPickup = $("#booking-confirmation-pickup");
@@ -44,7 +43,6 @@ const bookingConfirmationClose = $("#close-booking-confirmation");
 let toastTimeout;
 let stopCount = 0;
 let routeRequestId = 0;
-let mapViewSaveTimer = null;
 let selectedCustomer = null;
 let activeMapSelection = "pickup";
 let selectedDriverId = "";
@@ -54,34 +52,15 @@ let routeLayer;
 let markerLayer;
 let driverLocationLayer;
 const driverLocationMarkers = new Map();
-let originMarker;
-let destinationMarker;
 let dispatchTrips = [];
 const selectedLocations = { pickup: null, destination: null };
 const routeStops = [];
 
-let cancelAudio = null;
+const notificationSound = new Audio('/mp3/clipmouse.mp3');
 
 function playCancelSound() {
-  try {
-    if (!cancelAudio) {
-      const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-      const playBeep = (freq, start, duration) => {
-        const osc = audioCtx.createOscillator();
-        const gain = audioCtx.createGain();
-        osc.type = "square";
-        osc.frequency.setValueAtTime(freq, audioCtx.currentTime + start);
-        gain.gain.setValueAtTime(0.1, audioCtx.currentTime + start);
-        gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + start + duration);
-        osc.connect(gain);
-        gain.connect(audioCtx.destination);
-        osc.start(audioCtx.currentTime + start);
-        osc.stop(audioCtx.currentTime + start + duration);
-      };
-      playBeep(600, 0, 0.15);
-      playBeep(400, 0.2, 0.2);
-    }
-  } catch (e) { console.error("Error de audio:", e); }
+  notificationSound.currentTime = 0;
+  notificationSound.play().catch(e => console.error("Audio error:", e));
 }
 
 function showToast(message) {
@@ -146,6 +125,7 @@ function clearBookingForm() {
   selectedDriverId = "";
   if (driverAssignInput) driverAssignInput.value = "";
   updateAssignedDriverSummary();
+  $("#registered-history-search").disabled = true;
   selectedCustomerCard.hidden = true;
   customerResults.hidden = true;
   selectedLocations.pickup = null;
@@ -182,7 +162,7 @@ async function submitConfirmedBooking() {
     closeBookingConfirmationModal();
     clearBookingForm();
     await loadDispatchTrips();
-    showToast(`${data.ride.id} creado y guardado correctamente.`);
+    showToast(`Tx-${data.ride.id} creado correctamente.`);
   } catch (error) {
     showToast(error.message);
     confirmButton.disabled = false;
@@ -228,9 +208,15 @@ function selectCustomer(clientId) {
   customerResults.hidden = true;
   selectedCustomerCard.innerHTML = `<b>${escapeHtml(selectedCustomer.name)}</b> <span>· ${escapeHtml(selectedCustomer.phone)}</span>`;
   selectedCustomerCard.hidden = false;
+  $("#registered-history-search").disabled = false;
 }
 
-customerInput?.addEventListener("input", () => renderCustomerResults(customerInput.value));
+customerInput?.addEventListener("input", () => {
+    selectedCustomer = null;
+    $("#registered-history-search").disabled = true;
+    selectedCustomerCard.hidden = true;
+    renderCustomerResults(customerInput.value);
+});
 
 function toggleServiceFields() {
   const isGuest = serviceType.value === "Invitado";
@@ -323,9 +309,9 @@ const statusLabels = { pending: "Pendiente", accepted: "Aceptado", driver_arrivi
 
 function tripRowMarkup(trip) {
   return `<tr>
-    <td style="display:flex;gap:5px;">
-        <button onclick="viewTripDetails('${trip.id}')" title="Ver detalles">👁</button>
-        <button onclick="markTripContacted('${trip.id}')" title="Llamar">📞</button>
+    <td style="display:flex;gap:5px;justify-content:center;">
+        <button class="eye-btn" onclick="viewTripDetails('${trip.id}')" title="Ver detalles">👁</button>
+        <button class="call-btn" onclick="markTripContacted('${trip.id}')" title="Contactado">📞</button>
     </td>
     <td>${escapeHtml(trip.id)}</td>
     <td><span class="status-chip status-${trip.status}">${statusLabels[trip.status] || trip.status}</span></td>
@@ -333,9 +319,9 @@ function tripRowMarkup(trip) {
     <td>${escapeHtml(trip.phone)}</td>
     <td>${escapeHtml(trip.driver)}</td>
     <td>${trip.contactedAt ? "✓" : "—"}</td>
-    <td>${escapeHtml(trip.pickup)}</td>
-    <td>${escapeHtml(trip.destination)}</td>
-    <td>${new Date(trip.createdAt).toLocaleTimeString()}</td>
+    <td><span class="trip-address">${escapeHtml(trip.pickup)}</span></td>
+    <td><span class="trip-address">${escapeHtml(trip.destination)}</span></td>
+    <td>${new Date(trip.createdAt).toLocaleTimeString("es-DO", {hour:'2-digit', minute:'2-digit'})}</td>
   </tr>`;
 }
 
@@ -343,7 +329,7 @@ async function loadDispatchTrips() {
   try {
     const rides = await fetchJson("/api/dispatch/rides");
     dispatchTrips = rides;
-    $("#trip-table-body").innerHTML = rides.map(tripRowMarkup).join("");
+    $("#trip-table-body").innerHTML = rides.length ? rides.map(tripRowMarkup).join("") : '<tr><td colspan="10" style="text-align:center;padding:20px;color:#888;">No hay servicios activos.</td></tr>';
     $("#current-trip-count").textContent = rides.length;
   } catch {}
 }
@@ -356,12 +342,16 @@ async function loadConnectedDrivers() {
     const drivers = await fetchJson("/api/admin/driver-locations");
     connectedDrivers = drivers;
     renderDriverLocations(drivers);
-    $("#connected-drivers-list").innerHTML = drivers.map(d => `
-      <div class="driver" onclick="focusDriverOnMap('${d.id}')">
-        <b>${escapeHtml(d.name)}</b><br><small>${escapeHtml(d.vehiclePlate)}</small>
-      </div>
-    `).join("");
+    $("#connected-drivers-list").innerHTML = drivers.length ? drivers.map(d => `
+      <article class="driver ${d.connectionState === 'busy' ? 'busy' : ''}" onclick="focusDriverOnMap('${d.id}')">
+        <b>${escapeHtml(d.name)}</b><br><small>${escapeHtml(d.vehiclePlate)} · ${d.connectionState === 'busy' ? 'Ocupado' : 'Disponible'}</small>
+      </article>
+    `).join("") : '<div style="padding:20px;text-align:center;color:#888;font-size:12px;">No hay conductores conectados.</div>';
   } catch {}
+}
+
+function driverStatusLabel(d) {
+    return d.connectionState === 'busy' ? 'Ocupado' : 'Disponible';
 }
 
 function renderDriverLocations(drivers) {
@@ -369,8 +359,11 @@ function renderDriverLocations(drivers) {
   drivers.forEach(d => {
     if (d.location) {
       L.marker([d.location.lat, d.location.lon], {
-        icon: L.divIcon({ className:'taxote-car', html: '<img src="/assets/taxote-car.png" style="width:32px;height:35px;">' })
-      }).addTo(driverLocationLayer).bindPopup(d.name);
+        icon: L.divIcon({
+            className:'taxote-car-marker',
+            html: `<img src="/assets/taxote-car.png" style="width:32px;height:35px;transform:rotate(${d.location.bearing || 0}deg);">`
+        })
+      }).addTo(driverLocationLayer).bindPopup(`<b>${d.name}</b><br>${d.vehiclePlate}`);
     }
   });
 }
@@ -389,13 +382,30 @@ window.viewTripDetails = (id) => {
     $("#booking-form-content").style.display = "none";
     $("#details-trip-id").textContent = id;
     $("#trip-details-content").innerHTML = `
-        <div style="padding:15px; background:#f5f5f5; border-radius:8px;">
-            <p><b>Pasajero:</b> ${escapeHtml(trip.passenger)}</p>
-            <p><b>Teléfono:</b> ${escapeHtml(trip.phone)}</p>
-            <p><b>Recogida:</b> ${escapeHtml(trip.pickup)}</p>
-            <p><b>Destino:</b> ${escapeHtml(trip.destination)}</p>
-            <p><b>Conductor:</b> ${escapeHtml(trip.driver)}</p>
-            <p><b>Estado:</b> ${escapeHtml(trip.status)}</p>
+        <div style="display:flex; flex-direction:column; gap:15px;">
+            <div style="background:#f8f9fa; padding:15px; border-radius:12px; border:1px solid #eee;">
+                <small style="color:#888; font-weight:bold; text-transform:uppercase; font-size:10px;">Cliente</small>
+                <div style="font-size:18px; font-weight:800; color:#0b2e47; margin-top:5px;">${escapeHtml(trip.passenger)}</div>
+                <div style="font-size:14px; color:#64748b;">📞 ${escapeHtml(trip.phone)}</div>
+            </div>
+            <div>
+                <small style="display:block; font-size:10px; font-weight:800; color:#aaa;">RECOGIDA (A)</small>
+                <div style="font-size:13px; margin-top:3px;">${escapeHtml(trip.pickup)}</div>
+            </div>
+            <div>
+                <small style="display:block; font-size:10px; font-weight:800; color:#aaa;">DESTINO (B)</small>
+                <div style="font-size:13px; margin-top:3px;">${escapeHtml(trip.destination)}</div>
+            </div>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:10px;">
+                <div style="background:#e8f5e9; padding:12px; border-radius:10px;">
+                    <small style="color:#2e7d32; font-weight:bold; font-size:9px;">PRECIO</small>
+                    <div style="font-size:18px; font-weight:800; color:#1b5e20;">${formatPriceDop(trip.priceDop)}</div>
+                </div>
+                <div style="background:#f1f5f9; padding:12px; border-radius:10px;">
+                    <small style="color:#64748b; font-weight:bold; font-size:9px;">ESTADO</small>
+                    <div style="font-size:14px; font-weight:800; color:#334155;">${statusLabels[trip.status] || trip.status}</div>
+                </div>
+            </div>
         </div>
     `;
     if (trip.pickupLat) {
@@ -413,7 +423,7 @@ $("#close-trip-details")?.addEventListener("click", () => {
     calculateRoadRoute();
 });
 
-window.markTripContacted = (id) => showToast("Llamando al pasajero del viaje " + id);
+window.markTripContacted = (id) => showToast("Marcado como contactado.");
 
 bookingForm?.addEventListener("submit", async (e) => {
   e.preventDefault();
@@ -429,10 +439,8 @@ bookingForm?.addEventListener("submit", async (e) => {
   const details = {
     phone, name, customerName: name, customerPhone: phone,
     pickup: selectedLocations.pickup, destination: selectedLocations.destination,
-    stops: routeStops.map(s => s.location).filter(Boolean),
-    driverId: $("#driver-assign-id")?.value,
-    note: $("#dispatch-note")?.value,
-    travelTime: "Viajar ahora", distanceKm: 5.2, durationMin: 15, priceDop: 250
+    stops: [], travelTime: "Viajar ahora", distanceKm: 5.2, durationMin: 15, priceDop: 250,
+    note: $("#dispatch-note")?.value, driverId: selectedDriverId
   };
   openBookingConfirmationModal(details);
 });
@@ -458,10 +466,15 @@ window.selectAddress = (resultsId, kind, address, lat, lon) => {
     $(resultsId).hidden = true;
     selectedLocations[kind] = { address, lat, lon };
     if (kind === 'pickup') pickupInput.value = address;
-    else if (kind === 'destination') destinationInput.value = address;
+    else destinationInput.value = address;
     renderSelectionMarkers();
     calculateRoadRoute();
 };
 
 pickupInput?.addEventListener("input", (e) => searchAddress(e.target.value, "#pickup-results", "pickup"));
 destinationInput?.addEventListener("input", (e) => searchAddress(e.target.value, "#destination-results", "destination"));
+
+async function adminLogout() {
+    document.cookie = "taxote_admin_session=; Path=/; Secure; SameSite=Lax; HttpOnly; Max-Age=0";
+    location.href = "/admin-login.html";
+}

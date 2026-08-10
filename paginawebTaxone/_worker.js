@@ -26,7 +26,8 @@ const CORE_SCHEMA = [
 export default {
   async fetch(request, env) {
     const url = new URL(request.url), db = env.taxote_db;
-    if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders(request) });
+    const headers = corsHeaders(request);
+    if (request.method === "OPTIONS") return new Response(null, { status: 204, headers });
 
     try {
       if (!db) throw new HttpError(503, "Base de datos no vinculada.");
@@ -41,22 +42,14 @@ export default {
           const token = id("ADM");
           return json({ ok: true, token }, 200, {
             "Set-Cookie": `taxote_admin_session=${token}; Path=/; Secure; SameSite=Lax; HttpOnly`,
-            ...corsHeaders(request)
+            ...headers
           });
         }
         throw new HttpError(401, "Admin incorrecto.");
       }
 
-      if (path === "/api/admin/logout" && method === "POST") {
-        return json({ ok: true }, 200, {
-          "Set-Cookie": "taxote_admin_session=; Path=/; Secure; SameSite=Lax; HttpOnly; Max-Age=0",
-          ...corsHeaders(request)
-        });
-      }
-
-      const adminPaths = ["/api/admin/", "/api/dispatch/", "/reports.html", "/drivers.html", "/history.html"];
-      const isAdmin = adminPaths.some(p => path.startsWith(p));
-      if (isAdmin) {
+      const adminPaths = ["/api/admin/", "/api/dispatch/", "/reports.html", "/drivers.html", "/history.html", "/conversation-history.html", "/drivers-chat.html"];
+      if (adminPaths.some(p => path.startsWith(p))) {
         const cookies = parseCookies(request);
         if (!cookies.taxote_admin_session) throw new HttpError(401, "No autorizado.");
       }
@@ -75,13 +68,18 @@ async function ensureSchema(db) { if (!schemaReady) { await db.batch(CORE_SCHEMA
 
 function corsHeaders(request) {
   const origin = request.headers.get("Origin") || "*";
-  return {
-    "Access-Control-Allow-Origin": origin,
+  const h = {
     "Access-Control-Allow-Methods": "GET,POST,DELETE,PATCH,OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type,Accept,Authorization,Cookie",
-    "Access-Control-Allow-Credentials": "true",
     "Cache-Control": "no-store"
   };
+  if (origin !== "*") {
+    h["Access-Control-Allow-Origin"] = origin;
+    h["Access-Control-Allow-Credentials"] = "true";
+  } else {
+    h["Access-Control-Allow-Origin"] = "*";
+  }
+  return h;
 }
 
 function json(data, status = 200, extraHeaders = {}) {
@@ -104,7 +102,8 @@ function parseCookies(req) {
     const i = p.indexOf("=");
     if (i > 0) {
       const key = p.slice(0, i).trim();
-      c[key] = decodeURIComponent(p.slice(i + 1).trim());
+      const val = p.slice(i + 1).trim();
+      c[key] = decodeURIComponent(val);
     }
   });
   return c;
@@ -117,6 +116,22 @@ async function driverSession(req, db) { const t = parseCookies(req).taxote_drive
 
 function driverView(row) {
   return { id: row.public_id, name: `${row.first_name} ${row.last_name}`.trim(), phone: row.phone, email: row.email, vehiclePlate: row.vehicle_plate, vehicleBrand: row.vehicle_brand, vehicleModel: row.vehicle_model, vehicleColor: row.vehicle_color, vehicleType: row.vehicle_type, status: row.status, online: Boolean(row.is_online) };
+}
+
+async function driverRideView(db, r) {
+  const { results: stops } = await db.prepare("SELECT * FROM ride_stops WHERE ride_id=? ORDER BY position").bind(r.id).all();
+  return { id: r.public_id, passenger: r.passenger_name, phone: r.passenger_phone, pickup: r.pickup_address, pickupLat: Number(r.pickup_lat), pickupLon: Number(r.pickup_lon), destination: r.destination_address, destinationLat: Number(r.destination_lat), destinationLon: Number(r.destination_lon), status: r.status, priceDop: Number(r.price_dop), stops: stops || [], note: r.note, createdAt: r.created_at };
+}
+
+function dispatchRideView(r) {
+    return { id: r.public_id, passenger: r.passenger_name, phone: r.passenger_phone, pickup: r.pickup_address, destination: r.destination_address, driver: r.first_name ? `${r.first_name} ${r.last_name}` : "—", status: r.status, priceDop: Number(r.price_dop), createdAt: r.created_at, contactedAt: r.contacted_at, contactedBy: r.contacted_by };
+}
+
+async function nearestAvailableDriver(db, pickup) {
+  const threshold = new Date(Date.now() - 5 * 60000).toISOString();
+  const { results } = await db.prepare("SELECT * FROM drivers WHERE status='active' AND is_online=1 AND last_seen_at > ? AND current_lat IS NOT NULL").bind(threshold).all();
+  if (!results.length) return null;
+  return results[0];
 }
 
 async function handleApi(request, env, url) {
@@ -137,41 +152,42 @@ async function handleApi(request, env, url) {
     });
   }
 
-  if (path === "/api/driver/status" && method === "GET") {
+  if ((path === "/api/driver/status" || path === "/api/driver/me") && method === "GET") {
     const driver = await driverSession(request, db);
     if (!driver) throw new HttpError(401, "Sesión expirada.");
     return json({ ok: true, driver: driverView(driver) }, 200, headers);
   }
 
+  if (path === "/api/driver/location" && method === "POST") {
+    const driver = await driverSession(request, db); if (!driver) throw new HttpError(401, "Sesión expirada.");
+    const body = await bodyJson(request), lat = Number(body.lat), lon = Number(body.lon), stamp = nowIso();
+    await db.prepare("UPDATE drivers SET current_lat=?, current_lon=?, current_bearing=?, last_seen_at=?, is_online=1, updated_at=? WHERE id=?").bind(lat, lon, Number(body.bearing || 0), stamp, stamp, driver.id).run();
+    return json({ ok: true }, 200, headers);
+  }
+
+  if (path === "/api/driver/work" && method === "GET") {
+    const driver = await driverSession(request, db); if (!driver) throw new HttpError(401, "Sesión expirada.");
+    const active = await db.prepare("SELECT * FROM rides WHERE driver_id=? AND status NOT IN ('completed','cancelled') LIMIT 1").bind(driver.id).first();
+    const { results: offers } = await db.prepare("SELECT * FROM rides WHERE status='pending' AND (driver_id IS NULL OR driver_id=?) LIMIT 5").bind(driver.id).all();
+    return json({ activeRide: active ? await driverRideView(db, active) : null, offers: await Promise.all(offers.map(o => driverRideView(db, o))) }, 200, headers);
+  }
+
   if (path === "/api/admin/driver-locations" && method === "GET") {
     const threshold = new Date(Date.now() - 5 * 60000).toISOString();
     const { results } = await db.prepare("SELECT * FROM drivers WHERE status='active' AND is_online=1 AND last_seen_at > ?").bind(threshold).all();
-    return json(results.map(r => ({
-      id: r.public_id, name: `${r.first_name} ${r.last_name}`.trim(), phone: r.phone,
-      location: { lat: Number(r.current_lat), lon: Number(r.current_lon), bearing: Number(r.current_bearing || 0) },
-      vehiclePlate: r.vehicle_plate, vehicleBrand: r.vehicle_brand, vehicleModel: r.vehicle_model, vehicleColor: r.vehicle_color
-    })), 200, headers);
+    return json(results.map(r => ({ id: r.public_id, name: `${r.first_name} ${r.last_name}`.trim(), phone: r.phone, location: { lat: Number(r.current_lat), lon: Number(r.current_lon), bearing: Number(r.current_bearing || 0) }, vehiclePlate: r.vehicle_plate, vehicleBrand: r.vehicle_brand, vehicleModel: r.vehicle_model, vehicleColor: r.vehicle_color, connectionState: 'available' })), 200, headers);
   }
 
   if (path === "/api/dispatch/rides" && method === "GET") {
     const { results } = await db.prepare("SELECT r.*, d.first_name, d.last_name FROM rides r LEFT JOIN drivers d ON d.id=r.driver_id WHERE r.status NOT IN ('completed','cancelled') ORDER BY r.created_at DESC").all();
-    return json(results.map(r => ({
-      id: r.public_id, passenger: r.passenger_name, phone: r.passenger_phone, pickup: r.pickup_address, destination: r.destination_address,
-      driver: r.first_name ? `${r.first_name} ${r.last_name}` : "—", status: r.status, priceDop: Number(r.price_dop), createdAt: r.created_at,
-      pickupLat: r.pickup_lat, pickupLon: r.pickup_lon, destinationLat: r.destination_lat, destinationLon: r.destination_lon
-    })), 200, headers);
+    return json(results.map(r => ({ ...dispatchRideView(r), pickupLat: Number(r.pickup_lat), pickupLon: Number(r.pickup_lon), destinationLat: Number(r.destination_lat), destinationLon: Number(r.destination_lon) })), 200, headers);
   }
 
   if (path === "/api/rides" && method === "POST") {
     const body = await bodyJson(request), rid = id("RID"), stamp = nowIso(), p = phone(body.phone), n = clean(body.name);
-    let profile = await db.prepare("SELECT id FROM profiles WHERE phone=?").bind(p).first();
-    if (!profile) {
-      const { lastRowId } = await db.prepare("INSERT INTO profiles(public_id,kind,name,phone,created_at,updated_at) VALUES(?,'guest',?,?,?,?)").bind(id("USR"), n, p, stamp, stamp).run();
-      profile = { id: lastRowId };
-    }
-    const driverRow = body.driverId ? await db.prepare("SELECT id FROM drivers WHERE public_id=?").bind(body.driverId).first() : null;
-    await db.prepare(`INSERT INTO rides(public_id,profile_id,passenger_name,passenger_phone,pickup_address,pickup_lat,pickup_lon,destination_address,destination_lat,destination_lon,status,driver_id,note,price_dop,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
-      .bind(rid, profile.id, n, p, clean(body.pickup.address), Number(body.pickup.lat), Number(body.pickup.lon), clean(body.destination.address), Number(body.destination.lat), Number(body.destination.lon), driverRow ? "accepted" : "pending", driverRow?.id || null, clean(body.note), 250, stamp).run();
+    const driverRow = body.driverId ? await db.prepare("SELECT id FROM drivers WHERE public_id=?").bind(body.driverId).first() : await nearestAvailableDriver(db, body.pickup);
+    await db.prepare(`INSERT INTO rides(public_id,passenger_name,passenger_phone,pickup_address,pickup_lat,pickup_lon,destination_address,destination_lat,destination_lon,status,driver_id,note,price_dop,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+      .bind(rid, n, p, clean(body.pickup.address), Number(body.pickup.lat), Number(body.pickup.lon), clean(body.destination.address), Number(body.destination.lat), Number(body.destination.lon), driverRow ? "accepted" : "pending", driverRow?.id || null, clean(body.note), 250, stamp).run();
     return json({ ok: true, ride: { id: rid } }, 201, headers);
   }
 
@@ -190,8 +206,8 @@ async function handleApi(request, env, url) {
   if (path === "/api/reverse") {
       const lat = Number(url.searchParams.get("lat")), lon = Number(url.searchParams.get("lon"));
       const r = await db.prepare("SELECT * FROM addresses ORDER BY ((lat-?)*(lat-?)+(lon-?)*(lon-?)) LIMIT 1").bind(lat, lat, lon, lon).first();
-      return r ? json({ display_name: r.name, lat: r.lat, lon: r.lon }) : json({ error: "Not found" }, 404);
+      return r ? json({ display_name: r.name, lat: r.lat, lon: r.lon }, 200, headers) : json({ error: "Not found" }, 404, headers);
   }
 
-  throw new HttpError(404, "Not found");
+  throw new HttpError(404, "No encontrado");
 }
