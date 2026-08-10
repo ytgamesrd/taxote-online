@@ -44,7 +44,11 @@
                 const data = await response.json();
                 if (response.ok) {
                     const urlParams = new URLSearchParams(window.location.search);
-                    const next = urlParams.get('next') || '/';
+                    let next = urlParams.get('next') || '/';
+                    try {
+                        const target = new URL(next, location.origin);
+                        if (target.origin !== location.origin || target.pathname === '/admin-login' || target.pathname === '/admin-login.html') next = '/';
+                    } catch { next = '/'; }
                     location.href = next;
                 } else {
                     errorMsg.textContent = data.error || 'Error al iniciar sesión';

@@ -59,13 +59,18 @@ export default {
       const isAdmin = await adminSession(request, env.taxote_db);
       const protectedApi = path.startsWith("/api/admin/") || path.startsWith("/api/dispatch/");
       const publicStatic = /\.(?:css|js|png|jpe?g|webp|svg|ico|mp3|wav|woff2?|map)$/i.test(path);
-      const loginPage = path === "/admin-login.html";
+      const loginPage = path === "/admin-login" || path === "/admin-login.html";
 
       if (protectedApi && !isAdmin) throw new HttpError(401, "No autorizado.");
-      // Cualquier URL de página o ruta desconocida exige iniciar sesión. Los assets del login sí pueden cargar.
+
+      // Nunca proteger la propia pantalla de login. Cloudflare Assets puede normalizar
+      // /admin-login.html -> /admin-login; ambos deben ser públicos.
       if (!url.pathname.startsWith("/api/") && !loginPage && !publicStatic && !isAdmin) {
-        return Response.redirect(`${url.origin}/admin-login.html?next=${encodeURIComponent(url.pathname + url.search)}`, 302);
+        return Response.redirect(`${url.origin}/admin-login?next=${encodeURIComponent(url.pathname + url.search)}`, 302);
       }
+
+      // Si ya hay sesión y el usuario abre el login manualmente, vuelve a la Central.
+      if (loginPage && isAdmin) return Response.redirect(`${url.origin}/`, 302);
 
       if (!url.pathname.startsWith("/api/")) return env.ASSETS.fetch(request);
       return await handleApi(request, env, url, headers);
