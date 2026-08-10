@@ -531,3 +531,52 @@ body.panel-resize-active, body.panel-resize-active * { cursor: ew-resize !import
   .notification-panel { top: 49px; right: 6px; width: calc(100vw - 12px); }
   .availability { display: none; }
 }
+
+
+/* TAXOTE producción: interacción del mapa, paneles y tabla */
+.booking-panel, .drivers-panel { position: relative; }
+.address-control { display:flex; align-items:stretch; }
+.address-control input { min-width:0; flex:1; }
+.address-control .address-clear { width:34px; border:0; border-left:1px solid #dbe4e9; color:#9b3c3c; background:#fff6f6; font-size:18px; font-weight:800; cursor:pointer; }
+.address-control .address-clear:hover { color:#fff; background:#df5050; }
+.view-form-button { min-height:34px; padding:0 12px; border:1.5px solid rgba(255,255,255,.9); border-radius:7px; color:#fff; background:rgba(255,255,255,.08); font-size:9px; font-weight:800; cursor:pointer; white-space:nowrap; }
+.view-form-button:hover { background:#fff; color:#0b2e47; }
+.taxote-div-icon { overflow:visible!important; }
+.taxote-marker-shell { position:relative; width:30px; height:30px; }
+.taxote-marker-shell .marker-remove { position:absolute; z-index:4; top:-13px; right:-13px; display:none; width:20px; height:20px; padding:0; border:2px solid #fff; border-radius:50%; color:#fff; background:#df5050; box-shadow:0 3px 8px rgba(0,0,0,.25); font-size:14px; font-weight:900; line-height:15px; cursor:pointer; }
+.taxote-marker-shell:hover .marker-remove, .taxote-marker-shell.remove-visible .marker-remove { display:block; }
+.stop-row { position:relative; grid-template-columns:1fr 32px; }
+.stop-address { position:relative; }
+.stop-control { display:flex; }
+.stop-control input { flex:1; min-width:0; height:40px; padding:0 10px; border:1px solid #cfdadd; border-radius:7px 0 0 7px; }
+.stop-control button { width:38px; border:0; color:#fff; background:#0b2e47; cursor:pointer; }
+.stop-map-action { margin-top:4px; border:0; color:#597180; background:transparent; font-size:9px; font-weight:700; cursor:pointer; }
+.stop-map-action.active, .pick-on-map.active { color:#0b2e47; font-weight:900; }
+.driver-search-results { z-index:1100; }
+.driver-search-results .driver-choice { display:flex; align-items:center; justify-content:space-between; gap:8px; width:100%; min-height:42px; padding:7px 9px; border:0; border-bottom:1px solid #edf1f3; color:#17364a; background:#fff; text-align:left; cursor:pointer; }
+.driver-search-results .driver-choice:hover { background:#fff7d7; }
+.driver-search-results .driver-choice.busy { cursor:not-allowed; opacity:.55; }
+.driver.selected-driver { box-shadow:inset 3px 0 #f4c400; background:#fff9df; }
+.trip-table-shell { position:relative; }
+.trip-horizontal-controls { position:sticky; z-index:15; right:12px; bottom:8px; display:flex; justify-content:flex-end; gap:6px; width:max-content; margin:-40px 10px 8px auto; pointer-events:none; }
+.trip-horizontal-controls button { pointer-events:auto; width:34px; height:30px; border:1px solid #b9c8d0; border-radius:5px; color:#fff; background:#0b2e47; box-shadow:0 4px 12px rgba(0,0,0,.18); cursor:pointer; }
+.trip-horizontal-controls button:hover { background:#f4c400; color:#0b2e47; }
+.deposit-list-card { overflow:hidden; border:1px solid #d9e3e8; border-radius:10px; background:#fff; }
+.deposit-list-wrap { overflow:auto; }
+.deposit-list { width:100%; min-width:920px; border-collapse:collapse; }
+.deposit-list th { padding:11px 12px; color:#597180; background:#f4f7f9; font-size:9px; text-align:left; text-transform:uppercase; }
+.deposit-list td { padding:12px; border-top:1px solid #e7edf0; color:#314f61; font-size:10px; vertical-align:middle; }
+.deposit-list .proof-thumb { width:62px; height:62px; object-fit:cover; border-radius:6px; border:1px solid #d7e0e5; cursor:pointer; }
+.deposit-list .approve-deposit { padding:8px 10px; border:0; border-radius:5px; color:#fff; background:#237b4b; font-size:9px; font-weight:800; cursor:pointer; }
+.deposit-list .status-pending { color:#855f00; font-weight:800; }
+.deposit-list .status-approved { color:#087246; font-weight:800; }
+.notification-button-pulse { animation:taxote-notify-pulse .8s ease 2; }
+@keyframes taxote-notify-pulse { 50% { transform:scale(1.18); color:#f4c400; } }
+
+
+.trip-detail-grid { display:grid; gap:9px; }
+.trip-detail-grid > div { display:grid; grid-template-columns:118px 1fr; gap:9px; padding:9px 10px; border:1px solid #e3eaee; background:#fbfcfd; }
+.trip-detail-grid b { color:#0b2e47; font-size:9px; text-transform:uppercase; }
+.trip-detail-grid span { color:#4d6778; font-size:10px; overflow-wrap:anywhere; }
+.panel-resize-handle:after { content:"↔"; position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); display:grid; place-items:center; width:22px; height:22px; border:1px solid #c7d3da; border-radius:50%; color:#0b2e47; background:#fff; box-shadow:0 2px 7px rgba(0,0,0,.15); font-size:11px; font-weight:900; }
+.panel-resize-handle:hover:after,.panel-resize-handle.active:after { color:#0b2e47; background:#f4c400; }

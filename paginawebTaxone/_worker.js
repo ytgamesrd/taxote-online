@@ -45,16 +45,25 @@ export default {
       const path = normalizedPath(url.pathname);
       const method = request.method.toUpperCase();
 
+      // Un único dominio canónico: evita sesiones distintas entre www y apex.
+      if (url.hostname.toLowerCase() === "www.taxote.online") {
+        const canonical = new URL(request.url);
+        canonical.hostname = "taxote.online";
+        return Response.redirect(canonical.toString(), 308);
+      }
+
       // Login/logout admin quedan fuera de la protección.
       if (path === "/api/admin/login" && method === "POST") return adminLogin(request, env, headers);
       if (path === "/api/admin/logout" && method === "POST") return adminLogout(request, env, headers);
 
       const isAdmin = await adminSession(request, env.taxote_db);
-      const protectedPages = new Set(["", "/", "/index.html", "/drivers.html", "/deposits.html", "/history.html", "/drivers-chat.html", "/conversation-history.html", "/reports.html"]);
       const protectedApi = path.startsWith("/api/admin/") || path.startsWith("/api/dispatch/");
+      const publicStatic = /\.(?:css|js|png|jpe?g|webp|svg|ico|mp3|wav|woff2?|map)$/i.test(path);
+      const loginPage = path === "/admin-login.html";
 
       if (protectedApi && !isAdmin) throw new HttpError(401, "No autorizado.");
-      if (protectedPages.has(path) && !isAdmin) {
+      // Cualquier URL de página o ruta desconocida exige iniciar sesión. Los assets del login sí pueden cargar.
+      if (!url.pathname.startsWith("/api/") && !loginPage && !publicStatic && !isAdmin) {
         return Response.redirect(`${url.origin}/admin-login.html?next=${encodeURIComponent(url.pathname + url.search)}`, 302);
       }
 
@@ -235,8 +244,12 @@ async function rideView(db, row, forDriver = false) {
     passengerType: row.passenger_type || "guest",
     pickup: forDriver ? { address: row.pickup_address, lat: Number(row.pickup_lat), lon: Number(row.pickup_lon) } : row.pickup_address,
     destination: forDriver ? { address: row.destination_address, lat: Number(row.destination_lat), lon: Number(row.destination_lon) } : row.destination_address,
+    pickupLat: Number(row.pickup_lat), pickupLon: Number(row.pickup_lon),
+    destinationLat: Number(row.destination_lat), destinationLon: Number(row.destination_lon),
     driver: driverName || "Pendiente de TAXOTE Driver",
     driverId: row.driver_public_id || null,
+    driverVehicle: row.vehicle_brand ? `${row.vehicle_brand} ${row.vehicle_model || ""}`.trim() : "",
+    driverPlate: row.vehicle_plate || "",
     priceDop: Number(row.price_dop || 0),
     distanceKm: Number(row.distance_km || 0),
     durationMin: Number(row.duration_min || 0),
@@ -263,7 +276,7 @@ async function rideView(db, row, forDriver = false) {
   return view;
 }
 async function rideRowByPublicId(db, publicId) {
-  return db.prepare(`SELECT r.*, d.public_id AS driver_public_id, d.first_name, d.last_name
+  return db.prepare(`SELECT r.*, d.public_id AS driver_public_id, d.first_name, d.last_name, d.vehicle_brand, d.vehicle_model, d.vehicle_plate
     FROM rides r LEFT JOIN drivers d ON d.id=r.driver_id WHERE r.public_id=?`).bind(publicId).first();
 }
 async function addressHistory(db, profileId) {
@@ -335,6 +348,23 @@ function messageView(row, driverName = "") {
   };
 }
 
+
+async function nearestAvailableDriverForRide(db, ride, excludeDriverId = null) {
+  const {results}=await db.prepare(`SELECT d.* FROM drivers d
+    WHERE d.status='active' AND d.is_online=1 AND d.is_available=1
+      AND d.current_lat IS NOT NULL AND d.current_lon IS NOT NULL
+      AND (? IS NULL OR d.id<>?)
+      AND NOT EXISTS(SELECT 1 FROM rides ar WHERE ar.driver_id=d.id AND ar.status IN ('accepted','driver_arriving','arrived','in_progress'))
+      AND NOT EXISTS(SELECT 1 FROM ride_rejections rr WHERE rr.ride_id=? AND rr.driver_id=d.id)`)
+    .bind(excludeDriverId,excludeDriverId,ride.id).all();
+  let best=null,bestKm=Infinity;
+  for(const d of results||[]){
+    const km=haversineKm({lat:Number(ride.pickup_lat),lon:Number(ride.pickup_lon)},{lat:Number(d.current_lat),lon:Number(d.current_lon)});
+    if(km<bestKm){best=d;bestKm=km;}
+  }
+  return best;
+}
+
 async function handleApi(request, env, url, headers) {
   const db = env.taxote_db;
   const path = normalizedPath(url.pathname);
@@ -397,7 +427,8 @@ async function handleApi(request, env, url, headers) {
     const p = phone(url.searchParams.get("phone"));
     const profile = await db.prepare("SELECT * FROM profiles WHERE phone=?").bind(p).first();
     if (!profile) return json({found:false},200,headers);
-    return json({found:true,profile:profileView(profile),addresses:await addressHistory(db,profile.id)},200,headers);
+    const {results:recentRows}=await db.prepare(`SELECT r.*,d.public_id driver_public_id,d.first_name,d.last_name,d.vehicle_brand,d.vehicle_model,d.vehicle_plate FROM rides r LEFT JOIN drivers d ON d.id=r.driver_id WHERE r.profile_id=? ORDER BY r.created_at DESC LIMIT 10`).bind(profile.id).all();
+    return json({found:true,profile:profileView(profile),addresses:await addressHistory(db,profile.id),rides:await Promise.all((recentRows||[]).map(r=>rideView(db,r,false)))},200,headers);
   }
 
   if (path === "/api/guest/profile" && method === "POST") {
@@ -476,7 +507,7 @@ async function handleApi(request, env, url, headers) {
     }
     const result=await db.prepare(`INSERT INTO rides(public_id,profile_id,passenger_type,passenger_name,passenger_phone,pickup_address,pickup_lat,pickup_lon,destination_address,destination_lat,destination_lon,status,driver_id,note,payment_method,passenger_count,scheduled_at,price_dop,distance_km,duration_min,created_at,accepted_at)
       VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
-      .bind(rid,profile.id,profile.kind,profile.name,profile.phone,clean(body.pickup.address),Number(body.pickup.lat),Number(body.pickup.lon),clean(body.destination.address),Number(body.destination.lat),Number(body.destination.lon),driverDbId?"accepted":"pending",driverDbId,clean(body.note),clean(body.paymentMethod),Math.max(1,Number(body.passengerCount||1)),body.scheduledAt||null,estimate.priceDop,estimate.distanceKm,estimate.durationMin,stamp,driverDbId?stamp:null).run();
+      .bind(rid,profile.id,profile.kind,profile.name,profile.phone,clean(body.pickup.address),Number(body.pickup.lat),Number(body.pickup.lon),clean(body.destination.address),Number(body.destination.lat),Number(body.destination.lon),"pending",driverDbId,clean(body.note),clean(body.paymentMethod),Math.max(1,Number(body.passengerCount||1)),body.scheduledAt||null,estimate.priceDop,estimate.distanceKm,estimate.durationMin,stamp,null).run();
     const rideId=result.meta.last_row_id;
     const stops=Array.isArray(body.stops)?body.stops:[];
     for (let i=0;i<stops.length;i++) {
@@ -641,8 +672,8 @@ async function handleApi(request, env, url, headers) {
     const active=await db.prepare(`SELECT r.*,dr.public_id driver_public_id,dr.first_name,dr.last_name FROM rides r LEFT JOIN drivers dr ON dr.id=r.driver_id
       WHERE r.driver_id=? AND r.status IN ('accepted','driver_arriving','arrived','in_progress') ORDER BY r.created_at DESC LIMIT 1`).bind(d.id).first();
     const {results:offers}=await db.prepare(`SELECT r.*,NULL driver_public_id,NULL first_name,NULL last_name FROM rides r
-      WHERE r.status='pending' AND (r.driver_id IS NULL OR r.driver_id=?) AND NOT EXISTS(SELECT 1 FROM ride_rejections x WHERE x.ride_id=r.id AND x.driver_id=?)
-      ORDER BY r.created_at ASC LIMIT 5`).bind(d.id,d.id).all();
+      WHERE r.status='pending' AND (r.scheduled_at IS NULL OR r.scheduled_at<=?) AND (r.driver_id IS NULL OR r.driver_id=?) AND NOT EXISTS(SELECT 1 FROM ride_rejections x WHERE x.ride_id=r.id AND x.driver_id=?)
+      ORDER BY COALESCE(r.scheduled_at,r.created_at) ASC LIMIT 5`).bind(nowIso(),d.id,d.id).all();
     return json({activeRide:active?await rideView(db,active,true):null,offers:await Promise.all((offers||[]).map(r=>rideView(db,r,true))),queuedOffers:[]},200,headers);
   }
 
@@ -662,7 +693,10 @@ async function handleApi(request, env, url, headers) {
     }
     if (action==="reject" && method==="POST") {
       await db.prepare("INSERT OR IGNORE INTO ride_rejections(ride_id,driver_id,created_at) VALUES(?,?,?)").bind(row.id,d.id,nowIso()).run();
-      return json({ok:true},200,headers);
+      const next=await nearestAvailableDriverForRide(db,row,d.id);
+      await db.prepare("UPDATE rides SET driver_id=? WHERE id=? AND status='pending'").bind(next?.id||null,row.id).run();
+      await notify(db,"ride_offer","Servicio reasignado",next?`${row.public_id} fue enviado automáticamente a ${next.first_name} ${next.last_name}.`:`${row.public_id} quedó sin conductor disponible.`,"ride",row.public_id);
+      return json({ok:true,reassignedTo:next?.public_id||null},200,headers);
     }
     if (action==="release" && method==="POST") {
       if (row.driver_id===d.id && row.status==="pending") await db.prepare("UPDATE rides SET driver_id=NULL WHERE id=?").bind(row.id).run();
@@ -771,7 +805,8 @@ async function handleApi(request, env, url, headers) {
   // ---------- ADMIN: NOTIFICACIONES ----------
   if (path === "/api/admin/notifications" && method === "GET") {
     const {results}=await db.prepare("SELECT * FROM admin_notifications ORDER BY created_at DESC LIMIT 100").all();
-    return json((results||[]).map(r=>({id:r.id,kind:r.kind,title:r.title,body:r.body,entityType:r.entity_type,entityId:r.entity_id,createdAt:r.created_at,readAt:r.read_at})),200,headers);
+    const notifications=(results||[]).map(r=>({id:Number(r.id),kind:r.kind,title:r.title,body:r.body,entityType:r.entity_type,entityId:r.entity_id,createdAt:r.created_at,readAt:r.read_at}));
+    return json({notifications,unreadCount:notifications.filter(n=>!n.readAt).length},200,headers);
   }
   if (path === "/api/admin/notifications/read" && method === "POST") {
     const body=await bodyJson(request);
@@ -793,8 +828,11 @@ async function handleApi(request, env, url, headers) {
     const points=Math.max(0,Math.floor(Number(body.points||0)));
     const result=await db.prepare("UPDATE drivers SET points_balance=?,updated_at=? WHERE public_id=?").bind(points,nowIso(),clean(body.driverId)).run();
     if (!result.meta.changes) throw new HttpError(404,"Conductor no encontrado.");
-    // Si hay depósito pendiente compatible, márcalo procesado.
-    await db.prepare(`UPDATE driver_deposits SET status='approved',updated_at=? WHERE id=(SELECT id FROM driver_deposits dd JOIN drivers d ON d.id=dd.driver_id WHERE d.public_id=? AND dd.status='pending' ORDER BY dd.created_at ASC LIMIT 1)`).bind(nowIso(),clean(body.driverId)).run().catch(()=>{});
+    if (body.depositId) {
+      await db.prepare("UPDATE driver_deposits SET status='approved',updated_at=? WHERE id=?").bind(nowIso(),Number(body.depositId)).run();
+    } else {
+      await db.prepare(`UPDATE driver_deposits SET status='approved',updated_at=? WHERE id=(SELECT dd.id FROM driver_deposits dd JOIN drivers d ON d.id=dd.driver_id WHERE d.public_id=? AND dd.status='pending' ORDER BY dd.created_at ASC LIMIT 1)`).bind(nowIso(),clean(body.driverId)).run().catch(()=>{});
+    }
     return json({ok:true,points},200,headers);
   }
 
@@ -981,15 +1019,17 @@ async function handleApi(request, env, url, headers) {
   // ---------- DISPATCH ----------
   if (path === "/api/dispatch/clients" && method === "GET") {
     const {results}=await db.prepare("SELECT * FROM profiles ORDER BY updated_at DESC,name LIMIT 500").all();
-    return json((results||[]).map(profileView),200,headers);
+    const clients=[];
+    for (const p of results||[]) clients.push({...profileView(p),addresses:await addressHistory(db,p.id)});
+    return json(clients,200,headers);
   }
   if (path === "/api/dispatch/rides" && method === "GET") {
-    const {results}=await db.prepare(`SELECT r.*,d.public_id driver_public_id,d.first_name,d.last_name FROM rides r LEFT JOIN drivers d ON d.id=r.driver_id
+    const {results}=await db.prepare(`SELECT r.*,d.public_id driver_public_id,d.first_name,d.last_name,d.vehicle_brand,d.vehicle_model,d.vehicle_plate FROM rides r LEFT JOIN drivers d ON d.id=r.driver_id
       WHERE r.status NOT IN ('completed','cancelled') ORDER BY r.created_at DESC`).all();
     return json(await Promise.all((results||[]).map(r=>rideView(db,r,false))),200,headers);
   }
   if (path === "/api/dispatch/rides/history" && method === "GET") {
-    const {results}=await db.prepare(`SELECT r.*,d.public_id driver_public_id,d.first_name,d.last_name FROM rides r LEFT JOIN drivers d ON d.id=r.driver_id
+    const {results}=await db.prepare(`SELECT r.*,d.public_id driver_public_id,d.first_name,d.last_name,d.vehicle_brand,d.vehicle_model,d.vehicle_plate FROM rides r LEFT JOIN drivers d ON d.id=r.driver_id
       WHERE r.status IN ('completed','cancelled') ORDER BY COALESCE(r.closed_at,r.created_at) DESC LIMIT 500`).all();
     return json(await Promise.all((results||[]).map(r=>rideView(db,r,false))),200,headers);
   }

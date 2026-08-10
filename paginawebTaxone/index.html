@@ -75,6 +75,7 @@
 
     <main class="workspace">
       <aside id="booking-panel" class="booking-panel">
+        <div class="panel-resize-handle booking-resize-handle" data-resize-panel="booking" role="separator" tabindex="0" aria-label="Cambiar ancho del formulario"></div>
         <div id="booking-form-content">
           <div class="panel-heading">
             <h1>Agregar reservas</h1>
@@ -123,14 +124,14 @@
               <div class="route-fields">
                 <label class="field address-field">
                   <span>Recogida</span>
-                  <div class="address-control pickup-control"><input id="pickup" type="search" placeholder="Calle, sector..." autocomplete="off" /><button id="search-pickup" type="button">⌕</button></div>
+                  <div class="address-control pickup-control"><input id="pickup" type="search" placeholder="Calle, sector..." autocomplete="off" /><button id="clear-pickup" class="address-clear" type="button" aria-label="Quitar recogida">×</button><button id="search-pickup" type="button" aria-label="Buscar recogida">⌕</button></div>
                   <div id="pickup-results" class="address-results" hidden></div>
                   <button id="pick-pickup-map" class="pick-on-map pickup-pick" type="button"><i></i> En el mapa</button>
                 </label>
                 <div id="extra-stops" class="extra-stops"></div>
                 <label class="field address-field">
                   <span>Destino</span>
-                  <div class="address-control destination-control"><input id="destination" type="search" placeholder="Calle, sector..." autocomplete="off" /><button id="search-destination" type="button">⌕</button></div>
+                  <div class="address-control destination-control"><input id="destination" type="search" placeholder="Calle, sector..." autocomplete="off" /><button id="clear-destination" class="address-clear" type="button" aria-label="Quitar destino">×</button><button id="search-destination" type="button" aria-label="Buscar destino">⌕</button></div>
                   <div id="destination-results" class="address-results" hidden></div>
                   <button id="pick-destination-map" class="pick-on-map destination-pick" type="button"><i></i> En el mapa</button>
                 </label>
@@ -174,7 +175,7 @@
         <div id="trip-details-panel" style="position:absolute; inset:0; z-index:100; background:#fff; display:none; flex-direction:column;">
             <div class="panel-heading" style="background:#0b2e47; color:#fff; padding:20px;">
                 <div style="display:flex; align-items:center; gap:15px;">
-                    <button id="close-trip-details" style="background:rgba(255,255,255,0.1); border:1.5px solid #fff; color:#fff; width:36px; height:36px; border-radius:10px; cursor:pointer; font-weight:bold; display:grid; place-items:center;">←</button>
+                    <button id="close-trip-details" class="view-form-button" type="button">← VER FORMULARIO</button>
                     <div><small style="color:#f4c400; font-weight:800; letter-spacing:1px; font-size:10px;">DETALLES DEL SERVICIO</small><h1 id="details-trip-id" style="color:#fff; margin:0; font-size:22px;">---</h1></div>
                 </div>
             </div>
@@ -193,6 +194,7 @@
       </section>
 
       <aside id="drivers-panel" class="drivers-panel">
+        <div class="panel-resize-handle drivers-resize-handle" data-resize-panel="drivers" role="separator" tabindex="0" aria-label="Cambiar ancho de conductores"></div>
         <div class="drivers-heading"><h2>Conductores</h2></div>
         <div class="search-row"><span>⌕</span><input id="connected-driver-search" type="search" placeholder="Buscar..." /></div>
         <div id="connected-drivers-list" class="drivers-list"></div>
@@ -208,13 +210,19 @@
           <button id="refresh-trips" class="refresh-trips">↻</button>
         </div>
       </div>
-      <div class="trip-table-wrap">
+      <div class="trip-table-shell">
+        <div class="trip-table-wrap" id="trip-table-scroll">
         <table>
           <thead>
             <tr class="trip-column-headings"><th>Acción</th><th>Viaje</th><th>Estado</th><th>Pasajero</th><th>Teléfono</th><th>Conductor</th><th>Contactado</th><th>Recogida</th><th>Destino</th><th>Hora</th></tr>
           </thead>
           <tbody id="trip-table-body"></tbody>
         </table>
+        </div>
+        <div class="trip-horizontal-controls" aria-label="Mover tabla horizontalmente">
+          <button id="trip-scroll-left" type="button" title="Mover a la izquierda">◀</button>
+          <button id="trip-scroll-right" type="button" title="Mover a la derecha">▶</button>
+        </div>
       </div>
     </section>
 

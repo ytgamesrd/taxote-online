@@ -1,481 +1,374 @@
-// Esta lista se sincroniza con las cuentas creadas en TAXOTE User.
 let registeredClients = [];
+const $ = (s) => document.querySelector(s);
+const $$ = (s) => [...document.querySelectorAll(s)];
+const escapeHtml = (value="") => String(value).replace(/[&<>'"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"}[c]));
 
-const $ = (selector) => document.querySelector(selector);
-const $$ = (selector) => [...document.querySelectorAll(selector)];
-const escapeHtml = (value = "") => String(value).replace(/[&<>'"]/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" }[character]));
+const toast=$("#toast");
+const pickupInput=$("#pickup"), destinationInput=$("#destination");
+const routeNotice=$("#route-notice");
+const bookingForm=$("#booking-form");
+const serviceType=$("#service-type"), travelTime=$("#travel-time");
+const scheduleFields=$("#schedule-fields"), scheduleDate=$("#schedule-date"), scheduleTime=$("#schedule-time");
+const customerInput=$("#customer"), customerResults=$("#customer-results"), selectedCustomerCard=$("#selected-customer");
+const guestFields=$("#guest-fields");
+const driverAssignInput=$("#driver-assign-id");
+let toastTimer, selectedCustomer=null, selectedDriverId="", activeMapSelection="pickup";
+let map, routeLayer, markerLayer, driverLocationLayer;
+let dispatchTrips=[], connectedDrivers=[], routeStops=[];
+let routeRequestId=0, previousNotificationIds=new Set(), notificationInitialized=false, previousChatUnread=0;
 
-const toast = $("#toast");
-const pickupInput = $("#pickup");
-const destinationInput = $("#destination");
-const routeNotice = $("#route-notice");
-const bookingForm = $("#booking-form");
-const menuButton = $("#menu-button");
-const closeMenuButton = $("#close-menu");
-const sideMenu = $("#side-menu");
-const drawerOverlay = $("#drawer-overlay");
-const serviceType = $("#service-type");
-const travelTime = $("#travel-time");
-const scheduleFields = $("#schedule-fields");
-const scheduleDate = $("#schedule-date");
-const scheduleTime = $("#schedule-time");
-const customerInput = $("#customer");
-const customerResults = $("#customer-results");
-const selectedCustomerCard = $("#selected-customer");
-const guestFields = $("#guest-fields");
-const addressProviderStatus = $("#address-provider-status");
-const driverAssignInput = $("#driver-assign-id");
-const bookingConfirmationModal = $("#booking-confirmation-modal");
-const bookingConfirmationPickup = $("#booking-confirmation-pickup");
-const bookingConfirmationDestination = $("#booking-confirmation-destination");
-const bookingConfirmationStops = $("#booking-confirmation-stops");
-const bookingConfirmationDriver = $("#booking-confirmation-driver");
-const bookingConfirmationTime = $("#booking-confirmation-time");
-const bookingConfirmationPrice = $("#booking-confirmation-price");
-const bookingConfirmationCustomer = $("#booking-confirmation-customer");
-const bookingConfirmationPassengers = $("#booking-confirmation-passengers");
-const bookingConfirmationPayment = $("#booking-confirmation-payment");
-const bookingConfirmationNote = $("#booking-confirmation-note");
-const bookingConfirmationConfirmButton = $("#confirm-booking");
-const bookingConfirmationCancelButton = $("#cancel-booking");
-const bookingConfirmationClose = $("#close-booking-confirmation");
+const selectedLocations={pickup:null,destination:null};
+const defaultCenter=[18.49,-69.98], defaultZoom=11;
+const notificationSound=new Audio("/mp3/clipmouse.mp3");
 
-let toastTimeout;
-let stopCount = 0;
-let routeRequestId = 0;
-let selectedCustomer = null;
-let activeMapSelection = "pickup";
-let selectedDriverId = "";
-let pendingBookingConfirmation = null;
-let map;
-let routeLayer;
-let markerLayer;
-let driverLocationLayer;
-const driverLocationMarkers = new Map();
-let dispatchTrips = [];
-const selectedLocations = { pickup: null, destination: null };
-const routeStops = [];
-
-const notificationSound = new Audio('/mp3/clipmouse.mp3');
-
-function playCancelSound() {
-  notificationSound.currentTime = 0;
-  notificationSound.play().catch(e => console.error("Audio error:", e));
+function showToast(message){
+  if(!toast) return;
+  toast.textContent=message; toast.classList.add("show");
+  clearTimeout(toastTimer); toastTimer=setTimeout(()=>toast.classList.remove("show"),3400);
 }
-
-function showToast(message) {
-  toast.textContent = message;
-  toast.classList.add("show");
-  clearTimeout(toastTimeout);
-  toastTimeout = setTimeout(() => toast.classList.remove("show"), 3400);
-}
-
-function formatPriceDop(amount) {
-  return new Intl.NumberFormat("es-DO", { style: "currency", currency: "DOP", maximumFractionDigits: 0 }).format(amount || 0);
-}
-
-function renderDriverAssignOptions() {
-  if (!driverAssignInput) return;
-  driverAssignInput.value = selectedDriverId || "";
-  updateAssignedDriverSummary();
-}
-
-function updateAssignedDriverSummary() {
-  const summary = $("#driver-assigned-summary");
-  if (!summary) return;
-  const driver = connectedDrivers.find((item) => item.id === selectedDriverId);
-  summary.textContent = driver
-    ? `${driver.name} · ${driver.vehicleBrand} ${driver.vehicleModel} · ${driver.connectionState === "busy" ? "Ocupado" : "Disponible"}`
-    : "Sin conductor asignado";
-}
-
-function closeBookingConfirmationModal() {
-  if (!bookingConfirmationModal) return;
-  bookingConfirmationModal.hidden = true;
-  document.body.classList.remove("dispatch-modal-open");
-  pendingBookingConfirmation = null;
-}
-
-function openBookingConfirmationModal(details) {
-  if (!bookingConfirmationModal) return;
-  const selectedDriver = details.driverId ? connectedDrivers.find((driver) => driver.id === details.driverId) : null;
-  bookingConfirmationPickup.textContent = details.pickup.address;
-  bookingConfirmationDestination.textContent = details.destination.address;
-  bookingConfirmationStops.innerHTML = details.stops.length
-    ? details.stops.map((stop) => `<li>${escapeHtml(stop.address)}</li>`).join("")
-    : "<li>Sin paradas intermedias.</li>";
-  bookingConfirmationDriver.textContent = selectedDriver
-    ? `${selectedDriver.name} · ${driverStatusLabel(selectedDriver)}`
-    : "Sin conductor asignado";
-  bookingConfirmationTime.textContent = details.travelTime;
-  bookingConfirmationPassengers.textContent = details.passengerInfo;
-  bookingConfirmationPayment.textContent = details.paymentInfo || "No especificado";
-  bookingConfirmationPrice.textContent = `${details.distanceKm.toFixed(1)} km · ${details.durationMin} min · ${formatPriceDop(details.priceDop)}`;
-  bookingConfirmationCustomer.textContent = `${details.customerName} · ${details.customerPhone}`;
-  bookingConfirmationNote.textContent = details.note || "Sin nota";
-  pendingBookingConfirmation = details;
-  bookingConfirmationConfirmButton.disabled = false;
-  bookingConfirmationConfirmButton.innerHTML = "<span>✓</span> CONFIRMAR RESERVA";
-  bookingConfirmationModal.hidden = false;
-  document.body.classList.add("dispatch-modal-open");
-}
-
-function clearBookingForm() {
-  selectedCustomer = null;
-  selectedDriverId = "";
-  if (driverAssignInput) driverAssignInput.value = "";
-  updateAssignedDriverSummary();
-  $("#registered-history-search").disabled = true;
-  selectedCustomerCard.hidden = true;
-  customerResults.hidden = true;
-  selectedLocations.pickup = null;
-  selectedLocations.destination = null;
-  setMapSelection("pickup");
-  routeStops.splice(0).forEach((stop) => stop.row?.remove());
-  stopCount = 0;
-  renderSelectionMarkers();
-  calculateRoadRoute();
-  toggleServiceFields();
-}
-
-async function submitConfirmedBooking() {
-  if (!pendingBookingConfirmation) return;
-  const confirmButton = bookingConfirmationConfirmButton;
-  confirmButton.disabled = true;
-  confirmButton.innerHTML = "GUARDANDO…";
-  try {
-    const data = await fetchJson("/api/rides", {
-      method: "POST",
-      body: {
-        phone: pendingBookingConfirmation.phone,
-        name: pendingBookingConfirmation.name,
-        pickup: pendingBookingConfirmation.pickup,
-        destination: pendingBookingConfirmation.destination,
-        stops: pendingBookingConfirmation.stops,
-        driverId: pendingBookingConfirmation.driverId || undefined,
-        note: pendingBookingConfirmation.note || undefined,
-        scheduledAt: pendingBookingConfirmation.scheduledAt || undefined,
-        passengerCount: pendingBookingConfirmation.passengerCount || 1,
-        paymentMethod: pendingBookingConfirmation.paymentInfo || undefined
-      }
-    });
-    closeBookingConfirmationModal();
-    clearBookingForm();
-    await loadDispatchTrips();
-    showToast(`Tx-${data.ride.id} creado correctamente.`);
-  } catch (error) {
-    showToast(error.message);
-    confirmButton.disabled = false;
-    confirmButton.innerHTML = "<span>✓</span> CONFIRMAR RESERVA";
-  }
-}
-
-function openMenu() {
-  drawerOverlay.hidden = false;
-  sideMenu.classList.add("open");
-  menuButton.classList.add("open");
-}
-
-function closeMenu() {
-  sideMenu.classList.remove("open");
-  menuButton.classList.remove("open");
-  setTimeout(() => { drawerOverlay.hidden = true; }, 300);
-}
-
-menuButton?.addEventListener("click", () => sideMenu.classList.contains("open") ? closeMenu() : openMenu());
-closeMenuButton?.addEventListener("click", closeMenu);
-drawerOverlay?.addEventListener("click", closeMenu);
-
-function renderCustomerResults(query = "") {
-  const normalized = query.trim().toLocaleLowerCase("es");
-  const matches = registeredClients.filter((client) => `${client.name} ${client.phone}`.toLocaleLowerCase("es").includes(normalized)).slice(0, 6);
-  if (!registeredClients.length || (!matches.length && !normalized)) {
-    customerResults.hidden = true;
-    return;
-  }
-  customerResults.innerHTML = matches.map((client) => `
-    <button class="customer-option" type="button" data-client-id="${client.id}">
-      <span><b>${escapeHtml(client.name)}</b><small>${escapeHtml(client.phone)}</small></span>
-    </button>`).join("");
-  customerResults.hidden = false;
-  $$('.customer-option').forEach((button) => button.addEventListener("click", () => selectCustomer(button.dataset.clientId)));
-}
-
-function selectCustomer(clientId) {
-  selectedCustomer = registeredClients.find((client) => client.id === clientId) || null;
-  if (!selectedCustomer) return;
-  customerInput.value = selectedCustomer.name;
-  customerResults.hidden = true;
-  selectedCustomerCard.innerHTML = `<b>${escapeHtml(selectedCustomer.name)}</b> <span>· ${escapeHtml(selectedCustomer.phone)}</span>`;
-  selectedCustomerCard.hidden = false;
-  $("#registered-history-search").disabled = false;
-}
-
-customerInput?.addEventListener("input", () => {
-    selectedCustomer = null;
-    $("#registered-history-search").disabled = true;
-    selectedCustomerCard.hidden = true;
-    renderCustomerResults(customerInput.value);
-});
-
-function toggleServiceFields() {
-  const isGuest = serviceType.value === "Invitado";
-  $(".customer-picker-wrap").hidden = isGuest;
-  guestFields.hidden = !isGuest;
-}
-
-serviceType?.addEventListener("change", toggleServiceFields);
-
-async function fetchJson(url, options = {}) {
+function fmtPrice(v){ return new Intl.NumberFormat("es-DO",{style:"currency",currency:"DOP",maximumFractionDigits:0}).format(Number(v||0)); }
+function fmtDate(v){ const d=new Date(v); return Number.isNaN(d.getTime())?"—":d.toLocaleString("es-DO",{dateStyle:"short",timeStyle:"short"}); }
+async function fetchJson(url,options={}){
   let response;
-  try {
-    response = await fetch(url, {
-      method: options.method || "GET",
-      headers: { Accept: "application/json", ...(options.body ? { "Content-Type": "application/json" } : {}) },
-      body: options.body ? JSON.stringify(options.body) : undefined,
-      credentials: 'include'
-    });
-  } catch { throw new Error("Error de conexión."); }
-  const body = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(body.error || `Error (${response.status})`);
+  try{
+    response=await fetch(url,{method:options.method||"GET",credentials:"include",cache:"no-store",headers:{Accept:"application/json",...(options.body?{"Content-Type":"application/json"}:{})},body:options.body?JSON.stringify(options.body):undefined});
+  }catch{throw new Error("Error de conexión con TAXOTE.");}
+  const body=await response.json().catch(()=>({}));
+  if(response.status===401 && !url.includes("/api/admin/login")) { location.href=`/admin-login.html?next=${encodeURIComponent(location.pathname+location.search)}`; throw new Error("Sesión expirada."); }
+  if(!response.ok) throw new Error(body.error||`Error (${response.status})`);
   return body;
 }
 
-async function loadRegisteredClients() {
-  try { registeredClients = await fetchJson("/api/dispatch/clients"); } catch { registeredClients = []; }
-}
-loadRegisteredClients();
+/* menú */
+const menuButton=$("#menu-button"), sideMenu=$("#side-menu"), drawerOverlay=$("#drawer-overlay");
+function setMenu(open){sideMenu?.classList.toggle("open",open);menuButton?.classList.toggle("open",open);if(drawerOverlay)drawerOverlay.hidden=!open;}
+menuButton?.addEventListener("click",()=>setMenu(!sideMenu?.classList.contains("open")));
+$("#close-menu")?.addEventListener("click",()=>setMenu(false));
+drawerOverlay?.addEventListener("click",()=>setMenu(false));
 
-function markerIcon(kind, stopNumber = 0) {
-  const label = kind === "stop" ? `C${stopNumber}` : (kind === "destination" ? "B" : "A");
-  return L.divIcon({
-    className: "taxote-div-icon",
-    html: `<div class="taxote-marker ${kind}"><span>${label}</span></div>`,
-    iconSize: [30, 30],
-    iconAnchor: [15, 30]
-  });
-}
-
-function initializeMap() {
-  if (!window.L) return;
-  map = L.map("live-map").setView([18.505, -69.94], 11);
-  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png").addTo(map);
-  routeLayer = L.layerGroup().addTo(map);
-  markerLayer = L.layerGroup().addTo(map);
-  driverLocationLayer = L.layerGroup().addTo(map);
-  map.on("click", (event) => {
-    const kind = !selectedLocations.pickup ? "pickup" : (!selectedLocations.destination ? "destination" : null);
-    if (kind) setPointFromMap(kind, event.latlng);
-  });
-}
-initializeMap();
-
-async function reverseGeocode(lat, lon) {
-  const result = await fetchJson(`/api/reverse?lat=${lat}&lon=${lon}`);
-  return { address: result.display_name, lat: Number(result.lat), lon: Number(result.lon) };
-}
-
-async function setPointFromMap(kind, latlng) {
-  try {
-    const resolved = await reverseGeocode(latlng.lat, latlng.lng);
-    selectedLocations[kind] = resolved;
-    if (kind === "pickup") pickupInput.value = resolved.address;
-    else destinationInput.value = resolved.address;
-    renderSelectionMarkers();
-    calculateRoadRoute();
-  } catch (e) { showToast(e.message); }
-}
-
-function renderSelectionMarkers() {
-  markerLayer.clearLayers();
-  if (selectedLocations.pickup) L.marker([selectedLocations.pickup.lat, selectedLocations.pickup.lon], { icon: markerIcon("pickup") }).addTo(markerLayer);
-  if (selectedLocations.destination) L.marker([selectedLocations.destination.lat, selectedLocations.destination.lon], { icon: markerIcon("destination") }).addTo(markerLayer);
-}
-
-async function calculateRoadRoute() {
-  if (!selectedLocations.pickup || !selectedLocations.destination) return;
-  const coords = `${selectedLocations.pickup.lon},${selectedLocations.pickup.lat};${selectedLocations.destination.lon},${selectedLocations.destination.lat}`;
-  try {
-    const data = await fetchJson(`/api/route?coordinates=${coords}`);
-    routeLayer.clearLayers();
-    if (data.routes?.length) {
-      const latLngs = data.routes[0].geometry.coordinates.map(([lon, lat]) => [lat, lon]);
-      L.polyline(latLngs, { color: "#0b2e47", weight: 6 }).addTo(routeLayer);
-      routeNotice.textContent = `Ruta lista: ${(data.routes[0].distance/1000).toFixed(1)} km`;
-    }
-  } catch {}
-}
-
-const statusLabels = { pending: "Pendiente", accepted: "Aceptado", driver_arriving: "En camino", arrived: "Llegó", in_progress: "En viaje", completed: "Terminado", cancelled: "Cancelado" };
-
-function tripRowMarkup(trip) {
-  return `<tr>
-    <td style="display:flex;gap:5px;justify-content:center;">
-        <button class="eye-btn" onclick="viewTripDetails('${trip.id}')" title="Ver detalles">👁</button>
-        <button class="call-btn" onclick="markTripContacted('${trip.id}')" title="Contactado">📞</button>
-    </td>
-    <td>${escapeHtml(trip.id)}</td>
-    <td><span class="status-chip status-${trip.status}">${statusLabels[trip.status] || trip.status}</span></td>
-    <td>${escapeHtml(trip.passenger)}</td>
-    <td>${escapeHtml(trip.phone)}</td>
-    <td>${escapeHtml(trip.driver)}</td>
-    <td>${trip.contactedAt ? "✓" : "—"}</td>
-    <td><span class="trip-address">${escapeHtml(trip.pickup)}</span></td>
-    <td><span class="trip-address">${escapeHtml(trip.destination)}</span></td>
-    <td>${new Date(trip.createdAt).toLocaleTimeString("es-DO", {hour:'2-digit', minute:'2-digit'})}</td>
-  </tr>`;
-}
-
-async function loadDispatchTrips() {
-  try {
-    const rides = await fetchJson("/api/dispatch/rides");
-    dispatchTrips = rides;
-    $("#trip-table-body").innerHTML = rides.length ? rides.map(tripRowMarkup).join("") : '<tr><td colspan="10" style="text-align:center;padding:20px;color:#888;">No hay servicios activos.</td></tr>';
-    $("#current-trip-count").textContent = rides.length;
-  } catch {}
-}
-loadDispatchTrips();
-setInterval(loadDispatchTrips, 10000);
-
-let connectedDrivers = [];
-async function loadConnectedDrivers() {
-  try {
-    const drivers = await fetchJson("/api/admin/driver-locations");
-    connectedDrivers = drivers;
-    renderDriverLocations(drivers);
-    $("#connected-drivers-list").innerHTML = drivers.length ? drivers.map(d => `
-      <article class="driver ${d.connectionState === 'busy' ? 'busy' : ''}" onclick="focusDriverOnMap('${d.id}')">
-        <b>${escapeHtml(d.name)}</b><br><small>${escapeHtml(d.vehiclePlate)} · ${d.connectionState === 'busy' ? 'Ocupado' : 'Disponible'}</small>
-      </article>
-    `).join("") : '<div style="padding:20px;text-align:center;color:#888;font-size:12px;">No hay conductores conectados.</div>';
-  } catch {}
-}
-
-function driverStatusLabel(d) {
-    return d.connectionState === 'busy' ? 'Ocupado' : 'Disponible';
-}
-
-function renderDriverLocations(drivers) {
-  driverLocationLayer.clearLayers();
-  drivers.forEach(d => {
-    if (d.location) {
-      L.marker([d.location.lat, d.location.lon], {
-        icon: L.divIcon({
-            className:'taxote-car-marker',
-            html: `<img src="/assets/taxote-car.png" style="width:32px;height:35px;transform:rotate(${d.location.bearing || 0}deg);">`
-        })
-      }).addTo(driverLocationLayer).bindPopup(`<b>${d.name}</b><br>${d.vehiclePlate}`);
-    }
-  });
-}
-
-function focusDriverOnMap(id) {
-    const d = connectedDrivers.find(x => x.id === id);
-    if (d && d.location) map.flyTo([d.location.lat, d.location.lon], 16);
-}
-loadConnectedDrivers();
-setInterval(loadConnectedDrivers, 5000);
-
-window.viewTripDetails = (id) => {
-    const trip = dispatchTrips.find(t => t.id === id);
-    if (!trip) return;
-    $("#trip-details-panel").style.display = "flex";
-    $("#booking-form-content").style.display = "none";
-    $("#details-trip-id").textContent = id;
-    $("#trip-details-content").innerHTML = `
-        <div style="display:flex; flex-direction:column; gap:15px;">
-            <div style="background:#f8f9fa; padding:15px; border-radius:12px; border:1px solid #eee;">
-                <small style="color:#888; font-weight:bold; text-transform:uppercase; font-size:10px;">Cliente</small>
-                <div style="font-size:18px; font-weight:800; color:#0b2e47; margin-top:5px;">${escapeHtml(trip.passenger)}</div>
-                <div style="font-size:14px; color:#64748b;">📞 ${escapeHtml(trip.phone)}</div>
-            </div>
-            <div>
-                <small style="display:block; font-size:10px; font-weight:800; color:#aaa;">RECOGIDA (A)</small>
-                <div style="font-size:13px; margin-top:3px;">${escapeHtml(trip.pickup)}</div>
-            </div>
-            <div>
-                <small style="display:block; font-size:10px; font-weight:800; color:#aaa;">DESTINO (B)</small>
-                <div style="font-size:13px; margin-top:3px;">${escapeHtml(trip.destination)}</div>
-            </div>
-            <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:10px;">
-                <div style="background:#e8f5e9; padding:12px; border-radius:10px;">
-                    <small style="color:#2e7d32; font-weight:bold; font-size:9px;">PRECIO</small>
-                    <div style="font-size:18px; font-weight:800; color:#1b5e20;">${formatPriceDop(trip.priceDop)}</div>
-                </div>
-                <div style="background:#f1f5f9; padding:12px; border-radius:10px;">
-                    <small style="color:#64748b; font-weight:bold; font-size:9px;">ESTADO</small>
-                    <div style="font-size:14px; font-weight:800; color:#334155;">${statusLabels[trip.status] || trip.status}</div>
-                </div>
-            </div>
-        </div>
-    `;
-    if (trip.pickupLat) {
-        markerLayer.clearLayers();
-        L.marker([trip.pickupLat, trip.pickupLon], {icon: markerIcon("pickup")}).addTo(markerLayer);
-        L.marker([trip.destinationLat, trip.destinationLon], {icon: markerIcon("destination")}).addTo(markerLayer);
-        map.fitBounds([[trip.pickupLat, trip.pickupLon], [trip.destinationLat, trip.destinationLon]], {padding:[50,50]});
-    }
+/* paneles redimensionables con arrastre lateral */
+const workspace=$(".workspace");
+const resizeConfig={
+  booking:{panel:$("#booking-panel"),handle:$("[data-resize-panel='booking']"),var:"--booking-panel-width",min:270,max:900,key:"taxote-booking-panel-width"},
+  drivers:{panel:$("#drivers-panel"),handle:$("[data-resize-panel='drivers']"),var:"--drivers-panel-width",min:240,max:1200,key:"taxote-drivers-panel-width"}
 };
+function setPanelWidth(kind,width,persist=false){
+  const c=resizeConfig[kind]; if(!c?.panel||!c.handle||!workspace)return;
+  const max=Math.min(c.max,Math.max(c.min,workspace.clientWidth-(kind==="booking"?resizeConfig.drivers.panel.offsetWidth:resizeConfig.booking.panel.offsetWidth)-220));
+  width=Math.max(c.min,Math.min(max,Number(width)||c.min));
+  workspace.style.setProperty(c.var,`${Math.round(width)}px`);
+  if(persist) try{localStorage.setItem(c.key,String(Math.round(width)));}catch{}
+  map?.invalidateSize({animate:false});
+}
+for(const [kind,c] of Object.entries(resizeConfig)){
+  if(!c.handle) continue;
+  try{const saved=Number(localStorage.getItem(c.key)); if(saved)setPanelWidth(kind,saved);}catch{}
+  let state=null;
+  c.handle.addEventListener("pointerdown",e=>{
+    if(!matchMedia("(min-width:1181px)").matches)return;
+    state={id:e.pointerId,x:e.clientX,w:c.panel.offsetWidth}; c.handle.setPointerCapture(e.pointerId); c.handle.classList.add("active"); document.body.classList.add("panel-resize-active");
+  });
+  c.handle.addEventListener("pointermove",e=>{if(!state||e.pointerId!==state.id)return;const direction=kind==="drivers"?-1:1;setPanelWidth(kind,state.w+(e.clientX-state.x)*direction);});
+  const finish=e=>{if(!state||e.pointerId!==state.id)return;setPanelWidth(kind,c.panel.offsetWidth,true);state=null;c.handle.classList.remove("active");document.body.classList.remove("panel-resize-active");};
+  c.handle.addEventListener("pointerup",finish); c.handle.addEventListener("pointercancel",finish);
+}
 
-$("#close-trip-details")?.addEventListener("click", () => {
-    $("#trip-details-panel").style.display = "none";
-    $("#booking-form-content").style.display = "block";
-    renderSelectionMarkers();
-    calculateRoadRoute();
+/* clientes */
+async function loadRegisteredClients(){try{registeredClients=await fetchJson("/api/dispatch/clients");}catch{registeredClients=[];}}
+function renderCustomerResults(q=""){
+  const n=q.trim().toLowerCase();
+  const matches=registeredClients.filter(c=>`${c.name} ${c.phone}`.toLowerCase().includes(n)).slice(0,8);
+  if(!matches.length){customerResults.hidden=true;return;}
+  customerResults.innerHTML=matches.map(c=>`<button class="customer-option" type="button" data-id="${escapeHtml(c.id)}"><span><b>${escapeHtml(c.name)}</b><small>${escapeHtml(c.phone)}</small></span></button>`).join("");
+  customerResults.hidden=false;
+  customerResults.querySelectorAll("[data-id]").forEach(b=>b.addEventListener("click",()=>selectCustomer(b.dataset.id)));
+}
+function selectCustomer(id){
+  selectedCustomer=registeredClients.find(c=>c.id===id)||null;if(!selectedCustomer)return;
+  customerInput.value=selectedCustomer.name;customerResults.hidden=true;
+  selectedCustomerCard.innerHTML=`<b>${escapeHtml(selectedCustomer.name)}</b> <span>· ${escapeHtml(selectedCustomer.phone)}</span>`;
+  selectedCustomerCard.hidden=false; $("#registered-history-search").disabled=false;
+}
+customerInput?.addEventListener("input",()=>{selectedCustomer=null;selectedCustomerCard.hidden=true;$("#registered-history-search").disabled=true;renderCustomerResults(customerInput.value);});
+$("#clear-customer")?.addEventListener("click",()=>{selectedCustomer=null;customerInput.value="";selectedCustomerCard.hidden=true;customerResults.hidden=true;$("#registered-history-search").disabled=true;});
+$("#registered-history-search")?.addEventListener("click",()=>{if(!selectedCustomer)return showToast("Selecciona un cliente.");showToast(`Direcciones recientes listas para ${selectedCustomer.name}. Usa la lupa de Recogida o Destino.`);});
+$("#guest-history-search")?.addEventListener("click",async()=>{
+  const p=$("#guest-phone")?.value||"";if(!p)return;
+  try{const d=await fetchJson(`/api/contacts/lookup?phone=${encodeURIComponent(p)}`);if(d.found){$("#guest-name").value=d.profile.name;$("#guest-history-status").textContent=`${d.profile.name} encontrado. Sus direcciones recientes están disponibles en la lupa.`;selectedCustomer={...d.profile,addresses:d.addresses||[]};}else{$("#guest-history-status").textContent="Número nuevo.";}}catch(e){showToast(e.message);}
 });
+function toggleServiceFields(){const guest=serviceType?.value==="Invitado";$(".customer-picker-wrap").hidden=guest;guestFields.hidden=!guest;}
+serviceType?.addEventListener("change",toggleServiceFields);
+function toggleSchedule(){
+  const scheduled=travelTime?.value==="scheduled"; if(scheduleFields)scheduleFields.hidden=!scheduled;
+  if(scheduled){const now=new Date();scheduleDate.min=now.toISOString().slice(0,10);}
+}
+travelTime?.addEventListener("change",toggleSchedule);
 
-window.markTripContacted = (id) => showToast("Marcado como contactado.");
+/* mapa */
+function markerIcon(kind,num=0){
+  const label=kind==="stop"?`C${num}`:kind==="destination"?"B":"A";
+  return L.divIcon({className:"taxote-div-icon",html:`<div class="taxote-marker-shell"><div class="taxote-marker ${kind}"><span>${label}</span></div><button class="marker-remove" type="button" title="Quitar ${label}">×</button></div>`,iconSize:[30,30],iconAnchor:[15,30]});
+}
+function initializeMap(){
+  if(!window.L)return;
+  map=L.map("live-map",{zoomControl:true}).setView(defaultCenter,defaultZoom);
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:19}).addTo(map);
+  routeLayer=L.layerGroup().addTo(map);markerLayer=L.layerGroup().addTo(map);driverLocationLayer=L.layerGroup().addTo(map);
+  map.on("click",e=>setPointFromMap(activeMapSelection,e.latlng));
+}
+async function reverseAt(lat,lon){
+  try{const r=await fetchJson(`/api/reverse?lat=${lat}&lon=${lon}`);return{address:r.display_name||`${lat.toFixed(6)}, ${lon.toFixed(6)}`,lat:Number(lat),lon:Number(lon)};}
+  catch{return{address:`Punto ${lat.toFixed(6)}, ${lon.toFixed(6)}`,lat:Number(lat),lon:Number(lon)};}
+}
+function getStop(id){return routeStops.find(s=>s.id===id);}
+function setMapSelection(kind){activeMapSelection=kind;$$(".pick-on-map,.stop-map-action").forEach(b=>b.classList.remove("active"));if(kind==="pickup")$("#pick-pickup-map")?.classList.add("active");else if(kind==="destination")$("#pick-destination-map")?.classList.add("active");else getStop(kind)?.mapButton?.classList.add("active");}
+async function setPointFromMap(kind,latlng){
+  if(!kind)kind="pickup";
+  const resolved=await reverseAt(latlng.lat,latlng.lng);
+  if(kind==="pickup"){selectedLocations.pickup=resolved;pickupInput.value=resolved.address;}
+  else if(kind==="destination"){selectedLocations.destination=resolved;destinationInput.value=resolved.address;}
+  else{const s=getStop(kind);if(!s)return;s.location=resolved;s.input.value=resolved.address;}
+  renderSelectionMarkers();calculateRoadRoute();showToast("Punto colocado exactamente donde lo marcaste.");
+}
+function removePoint(kind){
+  if(kind==="pickup"){selectedLocations.pickup=null;pickupInput.value="";setMapSelection("pickup");}
+  else if(kind==="destination"){selectedLocations.destination=null;destinationInput.value="";setMapSelection("destination");}
+  else{const s=getStop(kind);if(s){s.location=null;s.input.value="";setMapSelection(kind);}}
+  renderSelectionMarkers();calculateRoadRoute();
+}
+function addMarker(kind,loc,iconKind,num=0){
+  if(!loc)return;
+  const m=L.marker([loc.lat,loc.lon],{icon:markerIcon(iconKind,num),draggable:true}).addTo(markerLayer);
+  m.on("dragend",e=>setPointFromMap(kind,e.target.getLatLng()));
+  m.on("click",()=>setMapSelection(kind));
+  setTimeout(()=>m.getElement()?.querySelector(".marker-remove")?.addEventListener("click",e=>{e.stopPropagation();removePoint(kind);}),0);
+}
+function renderSelectionMarkers(){
+  if(!markerLayer)return;markerLayer.clearLayers();
+  addMarker("pickup",selectedLocations.pickup,"pickup");
+  routeStops.forEach((s,i)=>addMarker(s.id,s.location,"stop",i+1));
+  addMarker("destination",selectedLocations.destination,"destination");
+}
+function routePoints(){return [selectedLocations.pickup,...routeStops.map(s=>s.location).filter(Boolean),selectedLocations.destination].filter(Boolean);}
+async function calculateRoadRoute(){
+  const pts=routePoints();routeLayer?.clearLayers();
+  if(pts.length<2){routeNotice.textContent="Selecciona origen y destino para ver la ruta.";return;}
+  const req=++routeRequestId,coords=pts.map(p=>`${p.lon},${p.lat}`).join(";");
+  try{
+    const data=await fetchJson(`/api/route?coordinates=${encodeURIComponent(coords)}`);if(req!==routeRequestId)return;
+    if(data.routes?.[0]){const r=data.routes[0];L.polyline(r.geometry.coordinates.map(([lon,lat])=>[lat,lon]),{color:"#0b2e47",weight:5}).addTo(routeLayer);routeNotice.textContent=`Ruta lista: ${(r.distance/1000).toFixed(1)} km · ${Math.ceil(r.duration/60)} min`;}
+  }catch(e){routeNotice.textContent="No se pudo calcular la ruta ahora.";}
+}
+function fitCurrentRoute(){
+  const pts=routePoints();
+  if(pts.length){map.fitBounds(L.latLngBounds(pts.map(p=>[p.lat,p.lon])),{padding:[55,55],maxZoom:14});}
+  else map.setView(defaultCenter,defaultZoom);
+}
+$("#recenter")?.addEventListener("click",fitCurrentRoute);
+$("#pick-pickup-map")?.addEventListener("click",()=>{setMapSelection("pickup");showToast("Haz clic donde quieras colocar A.");});
+$("#pick-destination-map")?.addEventListener("click",()=>{setMapSelection("destination");showToast("Haz clic donde quieras colocar B.");});
+$("#clear-pickup")?.addEventListener("click",()=>removePoint("pickup"));
+$("#clear-destination")?.addEventListener("click",()=>removePoint("destination"));
 
-bookingForm?.addEventListener("submit", async (e) => {
+/* paradas C */
+let stopSeq=0;
+function addRouteStop(){
+  const id=`stop-${++stopSeq}`;const row=document.createElement("div");row.className="stop-row";
+  row.innerHTML=`<div class="stop-address"><div class="stop-label">Parada C${routeStops.length+1}</div><div class="stop-control"><input type="search" placeholder="Dirección o selección en mapa" autocomplete="off"><button type="button">⌕</button></div><div class="address-results" hidden></div><button class="stop-map-action" type="button">● Elegir C${routeStops.length+1} en mapa</button></div><button class="remove-stop" type="button">×</button>`;
+  $("#extra-stops").appendChild(row);
+  const s={id,row,input:row.querySelector("input"),results:row.querySelector(".address-results"),searchButton:row.querySelector(".stop-control button"),mapButton:row.querySelector(".stop-map-action"),location:null};
+  routeStops.push(s);
+  s.input.addEventListener("input",()=>searchAddress(s.input.value,s.results,s.id));
+  s.searchButton.addEventListener("click",()=>runAddressSearch(s.input.value,s.results,s.id));
+  s.mapButton.addEventListener("click",()=>{setMapSelection(s.id);showToast("Haz clic donde quieras colocar esta parada.");});
+  row.querySelector(".remove-stop").addEventListener("click",()=>{routeStops=routeStops.filter(x=>x!==s);row.remove();renumberStops();renderSelectionMarkers();calculateRoadRoute();});
+  renumberStops();setMapSelection(id);
+}
+function renumberStops(){
+  routeStops.forEach((s,i)=>{s.row.querySelector(".stop-label").textContent=`Parada C${i+1}`;s.mapButton.textContent=`● Elegir C${i+1} en mapa`;});
+  if($("#stop-count-select"))$("#stop-count-select").value=String(Math.min(3,routeStops.length));
+}
+$("#add-stop")?.addEventListener("click",()=>{if(routeStops.length>=6)return showToast("Máximo 6 paradas.");addRouteStop();});
+$("#stop-count-select")?.addEventListener("change",e=>{const n=Number(e.target.value);while(routeStops.length<n)addRouteStop();while(routeStops.length>n){const s=routeStops.pop();s.row.remove();}renumberStops();renderSelectionMarkers();calculateRoadRoute();});
+
+/* búsqueda de direcciones + recientes */
+function recentAddresses(){
+  if(selectedCustomer?.addresses?.length)return selectedCustomer.addresses;
+  return [];
+}
+function renderAddressOptions(results,container,kind){
+  if(!container)return;
+  container.innerHTML=results.length?results.map((r,i)=>`<button type="button" class="address-option" data-i="${i}"><b>${escapeHtml(r.display_name||r.address||"Dirección")}</b></button>`).join(""):'<div class="address-option address-search-error">No se encontraron direcciones.</div>';
+  container.hidden=false;
+  container.querySelectorAll("[data-i]").forEach(b=>b.addEventListener("click",()=>{
+    const r=results[Number(b.dataset.i)],loc={address:r.display_name||r.address,lat:Number(r.lat),lon:Number(r.lon)};
+    if(kind==="pickup"){selectedLocations.pickup=loc;pickupInput.value=loc.address;}
+    else if(kind==="destination"){selectedLocations.destination=loc;destinationInput.value=loc.address;}
+    else{const s=getStop(kind);if(s){s.location=loc;s.input.value=loc.address;}}
+    container.hidden=true;renderSelectionMarkers();calculateRoadRoute();fitCurrentRoute();
+  }));
+}
+async function searchAddress(query,container,kind){
+  query=query.trim();if(query.length<2){container.hidden=true;return;}
+  try{renderAddressOptions(await fetchJson(`/api/geocode?q=${encodeURIComponent(query)}`),container,kind);}catch(e){showToast(e.message);}
+}
+function runAddressSearch(query,container,kind){
+  if(query.trim().length>=2)return searchAddress(query,container,kind);
+  const recent=recentAddresses();
+  if(recent.length)return renderAddressOptions(recent,container,kind);
+  showToast("Escribe una dirección o selecciona primero un cliente con historial.");
+}
+pickupInput?.addEventListener("input",()=>searchAddress(pickupInput.value,$("#pickup-results"),"pickup"));
+destinationInput?.addEventListener("input",()=>searchAddress(destinationInput.value,$("#destination-results"),"destination"));
+$("#search-pickup")?.addEventListener("click",()=>runAddressSearch(pickupInput.value,$("#pickup-results"),"pickup"));
+$("#search-destination")?.addEventListener("click",()=>runAddressSearch(destinationInput.value,$("#destination-results"),"destination"));
+
+/* conductores */
+function driverStatus(d){return d.connectionState==="busy"?"Ocupado":"Disponible";}
+function updateAssignedDriverSummary(){
+  const d=connectedDrivers.find(x=>x.id===selectedDriverId);driverAssignInput.value=selectedDriverId||"";
+  $("#driver-assigned-summary").textContent=d?`${d.name} · ${d.vehiclePlate||""} · ${driverStatus(d)}`:"Sin asignar";
+}
+function selectDriver(id){
+  const d=connectedDrivers.find(x=>x.id===id);if(!d)return;
+  if(d.connectionState==="busy")return showToast("Ese conductor está ocupado.");
+  selectedDriverId=id;updateAssignedDriverSummary();renderConnectedDrivers();$("#driver-search-results").hidden=true;$("#driver-assign-search").value=d.name;showToast(`${d.name} seleccionado para recibir el servicio.`);
+}
+function renderConnectedDrivers(){
+  const q=($("#connected-driver-search")?.value||"").trim().toLowerCase();
+  const visible=connectedDrivers.filter(d=>`${d.name} ${d.vehiclePlate}`.toLowerCase().includes(q));
+  $("#connected-drivers-list").innerHTML=visible.length?visible.map(d=>`<article class="driver ${d.connectionState==="busy"?"busy":""} ${d.id===selectedDriverId?"selected-driver":""}" data-driver="${escapeHtml(d.id)}"><b>${escapeHtml(d.name)}</b><br><small>${escapeHtml(d.vehiclePlate||"")} · ${driverStatus(d)}</small></article>`).join(""):'<div style="padding:20px;text-align:center;color:#888;font-size:12px;">No hay conductores conectados.</div>';
+  $("#connected-drivers-list").querySelectorAll("[data-driver]").forEach(el=>el.addEventListener("click",()=>selectDriver(el.dataset.driver)));
+}
+function renderAssignSearch(){
+  const q=($("#driver-assign-search")?.value||"").trim().toLowerCase(),box=$("#driver-search-results");
+  if(!q){box.hidden=true;return;}
+  const list=connectedDrivers.filter(d=>`${d.name} ${d.vehiclePlate}`.toLowerCase().includes(q)).slice(0,10);
+  box.innerHTML=list.length?list.map(d=>`<button type="button" class="driver-choice ${d.connectionState==="busy"?"busy":""}" data-driver="${escapeHtml(d.id)}"><span><b>${escapeHtml(d.name)}</b><small>${escapeHtml(d.vehiclePlate||"")}</small></span><strong>${driverStatus(d)}</strong></button>`).join(""):'<div class="driver-choice">No encontrado</div>';
+  box.hidden=false;box.querySelectorAll("[data-driver]").forEach(b=>b.addEventListener("click",()=>selectDriver(b.dataset.driver)));
+}
+async function loadConnectedDrivers(){
+  try{connectedDrivers=await fetchJson("/api/admin/driver-locations");renderConnectedDrivers();renderDriverLocations();renderAssignSearch();}catch{}
+}
+function renderDriverLocations(){
+  driverLocationLayer?.clearLayers();
+  connectedDrivers.forEach(d=>{if(!d.location)return;L.marker([d.location.lat,d.location.lon],{icon:L.divIcon({className:"taxote-car-marker",html:`<img src="/assets/taxote-car.png" style="width:32px;height:35px;transform:rotate(${Number(d.location.bearing||0)}deg)">`})}).addTo(driverLocationLayer).bindPopup(`<b>${escapeHtml(d.name)}</b><br>${escapeHtml(d.vehiclePlate||"")}`);});
+}
+$("#connected-driver-search")?.addEventListener("input",renderConnectedDrivers);
+$("#driver-assign-search")?.addEventListener("input",renderAssignSearch);
+
+/* viajes */
+const statusLabels={pending:"Pendiente",accepted:"Aceptado",driver_arriving:"En camino",arrived:"Llegó",in_progress:"En viaje",completed:"Terminado",cancelled:"Cancelado"};
+function tripRow(t){return `<tr><td><button class="eye-btn" data-eye="${escapeHtml(t.id)}" title="Ver detalles">👁</button></td><td>${escapeHtml(t.id)}</td><td><span class="status-chip status-${escapeHtml(t.status)}">${escapeHtml(statusLabels[t.status]||t.status)}</span></td><td>${escapeHtml(t.passenger)}</td><td>${escapeHtml(t.phone)}</td><td>${escapeHtml(t.driver)}</td><td>${t.contactedAt?"✓":"—"}</td><td>${escapeHtml(t.pickup)}</td><td>${escapeHtml(t.destination)}</td><td>${new Date(t.createdAt).toLocaleTimeString("es-DO",{hour:"2-digit",minute:"2-digit"})}</td></tr>`;}
+function renderTrips(){
+  const q=($("#trip-search")?.value||"").trim().toLowerCase();
+  const rows=dispatchTrips.filter(t=>!q||JSON.stringify(t).toLowerCase().includes(q));
+  $("#trip-table-body").innerHTML=rows.length?rows.map(tripRow).join(""):'<tr><td colspan="10" style="text-align:center;padding:22px;color:#81919a;">No hay servicios activos.</td></tr>';
+  $("#current-trip-count").textContent=dispatchTrips.length;
+  $("#trip-table-body").querySelectorAll("[data-eye]").forEach(b=>b.addEventListener("click",()=>viewTripDetails(b.dataset.eye)));
+}
+async function loadDispatchTrips(){try{dispatchTrips=await fetchJson("/api/dispatch/rides");renderTrips();}catch{}}
+function viewTripDetails(id){
+  const t=dispatchTrips.find(x=>x.id===id);if(!t)return;
+  $("#trip-details-panel").style.display="flex";$("#booking-form-content").style.display="none";$("#details-trip-id").textContent=t.id;
+  $("#trip-details-content").innerHTML=`<div class="trip-detail-grid">
+    <div><b>Fecha del viaje</b><span>${escapeHtml(fmtDate(t.createdAt))}</span></div>
+    <div><b>Estado</b><span>${escapeHtml(statusLabels[t.status]||t.status)}</span></div>
+    <div><b>Nombre del pasajero</b><span>${escapeHtml(t.passenger)}</span></div>
+    <div><b>Teléfono</b><span>${escapeHtml(t.phone)}</span></div>
+    <div><b>Conductor</b><span>${escapeHtml(t.driver)}</span></div>
+    <div><b>Vehículo</b><span>${escapeHtml(t.driverVehicle||"—")} ${escapeHtml(t.driverPlate||"")}</span></div>
+    <div><b>Recogida</b><span>${escapeHtml(t.pickup)}</span></div>
+    <div><b>Destino</b><span>${escapeHtml(t.destination)}</span></div>
+    <div><b>Precio</b><span>${fmtPrice(t.priceDop)}</span></div>
+    <div><b>Distancia</b><span>${Number(t.distanceKm||0).toFixed(1)} km</span></div>
+    <div><b>Duración</b><span>${Number(t.durationMin||0)} min</span></div>
+    <div><b>Pago</b><span>${escapeHtml(t.paymentMethod||"—")}</span></div>
+    <div><b>Nota</b><span>${escapeHtml(t.note||"Sin nota")}</span></div>
+  </div>`;
+  if(Number.isFinite(t.pickupLat)&&Number.isFinite(t.destinationLat))map.fitBounds([[t.pickupLat,t.pickupLon],[t.destinationLat,t.destinationLon]],{padding:[55,55]});
+}
+window.viewTripDetails=viewTripDetails;
+$("#close-trip-details")?.addEventListener("click",()=>{$("#trip-details-panel").style.display="none";$("#booking-form-content").style.display="block";renderSelectionMarkers();calculateRoadRoute();});
+$("#trip-search")?.addEventListener("input",renderTrips);
+$("#refresh-trips")?.addEventListener("click",loadDispatchTrips);
+
+/* crear reserva */
+function scheduledValue(){
+  if(travelTime.value!=="scheduled")return null;
+  if(!scheduleDate.value||!scheduleTime.value)throw new Error("Selecciona fecha y hora del viaje programado.");
+  const d=new Date(`${scheduleDate.value}T${scheduleTime.value}:00`);
+  if(d.getTime()<=Date.now())throw new Error("La hora programada debe ser futura.");
+  return d.toISOString();
+}
+bookingForm?.addEventListener("submit",async e=>{
   e.preventDefault();
-  const isGuest = serviceType.value === "Invitado";
-  const name = isGuest ? $("#guest-name").value : selectedCustomer?.name;
-  const phone = isGuest ? $("#guest-phone").value : selectedCustomer?.phone;
-
-  if (!name || !phone || !selectedLocations.pickup || !selectedLocations.destination) {
-    showToast("Por favor complete todos los campos.");
-    return;
-  }
-
-  const details = {
-    phone, name, customerName: name, customerPhone: phone,
-    pickup: selectedLocations.pickup, destination: selectedLocations.destination,
-    stops: [], travelTime: "Viajar ahora", distanceKm: 5.2, durationMin: 15, priceDop: 250,
-    note: $("#dispatch-note")?.value, driverId: selectedDriverId
-  };
-  openBookingConfirmationModal(details);
+  const guest=serviceType.value==="Invitado";
+  const name=guest?$("#guest-name").value:selectedCustomer?.name, phone=guest?$("#guest-phone").value:selectedCustomer?.phone;
+  if(!name||!phone||!selectedLocations.pickup||!selectedLocations.destination)return showToast("Completa pasajero, recogida y destino.");
+  try{
+    const scheduledAt=scheduledValue();
+    const stops=routeStops.filter(s=>s.location).map(s=>s.location);
+    const est=await fetchJson("/api/rides/estimate",{method:"POST",body:{pickup:selectedLocations.pickup,destination:selectedLocations.destination,stops}});
+    const estimate=est.estimate||{};
+    if(!confirm(`¿Crear esta reserva?\n\n${selectedLocations.pickup.address}\n→ ${selectedLocations.destination.address}\n${estimate.distanceKm?.toFixed?.(1)||0} km · ${estimate.durationMin||0} min · ${fmtPrice(estimate.priceDop)}`))return;
+    const data=await fetchJson("/api/rides",{method:"POST",body:{phone,name,pickup:selectedLocations.pickup,destination:selectedLocations.destination,stops,driverId:selectedDriverId||undefined,note:$("#dispatch-note").value,scheduledAt,passengerCount:Number($("#passenger-count-select").value?.match(/\d+/)?.[0]||1),paymentMethod:$("#payment-method-select").value}});
+    showToast(`Servicio ${data.ride?.id||""} creado.`);clearBookingForm();await loadDispatchTrips();
+  }catch(err){showToast(err.message);}
 });
-
-bookingConfirmationConfirmButton?.addEventListener("click", submitConfirmedBooking);
-bookingConfirmationCancelButton?.addEventListener("click", closeBookingConfirmationModal);
-bookingConfirmationClose?.addEventListener("click", closeBookingConfirmationModal);
-
-async function searchAddress(query, resultsId, kind) {
-    if (query.length < 3) return $(resultsId).hidden = true;
-    try {
-        const results = await fetchJson(`/api/geocode?q=${encodeURIComponent(query)}`);
-        $(resultsId).innerHTML = results.map(r => `
-            <button type="button" class="address-option" onclick="selectAddress('${resultsId}', '${kind}', '${escapeHtml(r.display_name)}', ${r.lat}, ${r.lon})">
-                ${escapeHtml(r.display_name)}
-            </button>
-        `).join("");
-        $(resultsId).hidden = false;
-    } catch {}
+function clearBookingForm(){
+  bookingForm?.reset();selectedCustomer=null;selectedDriverId="";selectedLocations.pickup=null;selectedLocations.destination=null;
+  routeStops.forEach(s=>s.row.remove());routeStops=[];stopSeq=0;
+  selectedCustomerCard.hidden=true;customerResults.hidden=true;$("#driver-search-results").hidden=true;$("#registered-history-search").disabled=true;
+  updateAssignedDriverSummary();toggleServiceFields();toggleSchedule();setMapSelection("pickup");renderSelectionMarkers();routeLayer?.clearLayers();routeNotice.textContent="Selecciona origen y destino para ver la ruta.";map?.setView(defaultCenter,defaultZoom);
 }
+$("#clear-form")?.addEventListener("click",e=>{e.preventDefault();clearBookingForm();showToast("Formulario limpio.");});
 
-window.selectAddress = (resultsId, kind, address, lat, lon) => {
-    $(resultsId).hidden = true;
-    selectedLocations[kind] = { address, lat, lon };
-    if (kind === 'pickup') pickupInput.value = address;
-    else destinationInput.value = address;
-    renderSelectionMarkers();
-    calculateRoadRoute();
+/* controles horizontales de tabla */
+function bindScrollButton(id,dir){const b=$(id),sc=$("#trip-table-scroll");if(!b||!sc)return;let timer=null;const step=()=>sc.scrollBy({left:dir*280,behavior:"smooth"});b.addEventListener("click",step);b.addEventListener("pointerdown",()=>{timer=setInterval(()=>sc.scrollBy({left:dir*45}),80);});["pointerup","pointerleave","pointercancel"].forEach(ev=>b.addEventListener(ev,()=>{clearInterval(timer);timer=null;}));}
+bindScrollButton("#trip-scroll-left",-1);bindScrollButton("#trip-scroll-right",1);
+
+/* notificaciones reales de la central */
+const notificationButton=$("#notification-button"),notificationPanel=$("#notification-panel"),notificationBadge=$("#notification-badge"),notificationList=$("#notification-list");
+function enableNotifications(){
+  notificationSound.play().then(()=>{notificationSound.pause();notificationSound.currentTime=0;}).catch(()=>{});
+  if("Notification" in window&&Notification.permission==="default")Notification.requestPermission().catch(()=>{});
+}
+document.addEventListener("pointerdown",enableNotifications,{once:true});
+function notifDestination(n){if(n.entityType==="driver")return"/drivers.html";if(n.entityType==="ride")return"/#active-trips";if(n.kind==="deposit"||n.entityType==="deposit")return"/deposits.html";return"#";}
+function renderNotifications(data){
+  const list=data.notifications||[],unread=Number(data.unreadCount||0);
+  notificationBadge.textContent=unread;notificationBadge.hidden=!unread;notificationButton?.classList.toggle("has-unread",!!unread);
+  notificationList.innerHTML=list.length?list.map(n=>`<a class="notification-item ${n.readAt?"read":"unread"}" href="${notifDestination(n)}"><span class="notification-symbol">${n.kind==="ride_cancelled"?"×":"●"}</span><span><b>${escapeHtml(n.title)}</b><small>${escapeHtml(n.body)}</small><time>${escapeHtml(fmtDate(n.createdAt))}</time></span></a>`).join(""):'<p class="notification-empty">No tienes avisos todavía.</p>';
+  const ids=new Set(list.map(n=>Number(n.id)));
+  if(notificationInitialized){
+    const fresh=list.find(n=>!previousNotificationIds.has(Number(n.id))&&!n.readAt);
+    if(fresh){notificationSound.currentTime=0;notificationSound.play().catch(()=>{});notificationButton?.classList.add("notification-button-pulse");setTimeout(()=>notificationButton?.classList.remove("notification-button-pulse"),1800);showToast(fresh.title);if("Notification" in window&&Notification.permission==="granted")new Notification(`TAXOTE · ${fresh.title}`,{body:fresh.body});}
+  }
+  previousNotificationIds=ids;notificationInitialized=true;
+}
+async function loadNotifications(){try{renderNotifications(await fetchJson("/api/admin/notifications"));}catch{}}
+notificationButton?.addEventListener("click",e=>{e.stopPropagation();notificationPanel.hidden=!notificationPanel.hidden;if(!notificationPanel.hidden)loadNotifications();});
+$("#close-notifications")?.addEventListener("click",()=>notificationPanel.hidden=true);
+$("#read-all-notifications")?.addEventListener("click",async()=>{try{await fetchJson("/api/admin/notifications/read",{method:"POST",body:{all:true}});await loadNotifications();}catch(e){showToast(e.message);}});
+document.addEventListener("click",e=>{if(notificationPanel&&!notificationPanel.hidden&&!notificationPanel.contains(e.target)&&e.target!==notificationButton)notificationPanel.hidden=true;});
+
+/* chat simple */
+window.toggleChat=(kind)=>{
+  const wp=$("#whatsapp-panel"),ip=$("#internal-chat-panel"),target=kind==="whatsapp"?wp:ip,other=kind==="whatsapp"?ip:wp;
+  if(other)other.style.display="none";if(target)target.style.display=target.style.display==="flex"?"none":"flex";
+};
+$("#btn-whatsapp-toggle")?.addEventListener("click",()=>toggleChat("whatsapp"));
+$("#btn-chat-toggle")?.addEventListener("click",()=>toggleChat("internal"));
+
+/* logout completo */
+window.adminLogout=async function(){
+  if(!confirm("¿Seguro que deseas cerrar completamente la sesión administrativa?"))return;
+  try{await fetchJson("/api/admin/logout",{method:"POST"});}catch{}
+  try{localStorage.removeItem("taxote-booking-panel-width");localStorage.removeItem("taxote-drivers-panel-width");}catch{}
+  location.replace("/admin-login.html");
 };
 
-pickupInput?.addEventListener("input", (e) => searchAddress(e.target.value, "#pickup-results", "pickup"));
-destinationInput?.addEventListener("input", (e) => searchAddress(e.target.value, "#destination-results", "destination"));
-
-async function adminLogout() {
-    try { await fetch("/api/admin/logout", { method: "POST", credentials: "include" }); } catch {}
-    location.href = "/admin-login.html";
-}
+initializeMap();toggleServiceFields();toggleSchedule();setMapSelection("pickup");updateAssignedDriverSummary();
+loadRegisteredClients();loadConnectedDrivers();loadDispatchTrips();loadNotifications();
+setInterval(loadConnectedDrivers,4000);setInterval(loadDispatchTrips,7000);setInterval(loadNotifications,4000);

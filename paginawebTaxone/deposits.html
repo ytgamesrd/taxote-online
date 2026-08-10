@@ -54,9 +54,14 @@
     <main class="drivers-admin-page">
       <header class="admin-titlebar"><div><h1>Control de Depósitos</h1><p>Verifica los pagos y asigna puntos a los conductores.</p></div><button id="refresh-deposits" type="button">↻ Actualizar</button></header>
 
-      <div id="deposits-container" class="deposit-grid">
-          <!-- Deposits injected here -->
+      <section class="deposit-list-card">
+      <div class="deposit-list-wrap">
+        <table class="deposit-list">
+          <thead><tr><th>Conductor</th><th>ID</th><th>Puntos</th><th>Monto</th><th>Comprobante</th><th>Estado</th><th>Fecha</th><th>Acción</th></tr></thead>
+          <tbody id="deposits-container"><tr><td colspan="8" style="text-align:center;padding:28px;">Cargando depósitos…</td></tr></tbody>
+        </table>
       </div>
+    </section>
 
       <div id="deposits-empty" class="drivers-empty" hidden>
           <span>💰</span><h3>No hay depósitos pendientes</h3><p>Las solicitudes de puntos aparecerán aquí.</p>
