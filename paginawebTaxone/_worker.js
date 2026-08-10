@@ -198,7 +198,7 @@ async function handleApi(request, env, url) {
     const { results } = await db.prepare("SELECT * FROM drivers ORDER BY created_at DESC").all();
     return json(results.map(driverView));
   }
-  if (path === "/api/admin/connected-drivers" && method === "GET") {
+  if ((path === "/api/admin/connected-drivers" || path === "/api/admin/driver-locations") && method === "GET") {
     const threshold = new Date(Date.now() - 5 * 60000).toISOString();
     const { results } = await db.prepare("SELECT * FROM drivers WHERE status='active' AND is_online=1 AND last_seen_at > ?").bind(threshold).all();
     return json(results.map(r => ({ ...driverView(r), id: r.public_id, location: { lat: r.current_lat, lon: r.current_lon, bearing: r.current_bearing }, connectionState: 'available' })));
