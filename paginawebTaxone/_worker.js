@@ -93,6 +93,7 @@ export default {
       return await handleApi(request, env, url, headers);
     } catch (error) {
       const status = error instanceof HttpError ? error.status : 500;
+      console.error(error);
       return json({ error: error.message || "Error interno." }, status, headers);
     }
   }
@@ -155,8 +156,19 @@ async function handleApi(request, env, url, headers) {
     const body = await bodyJson(request);
     const p = phone(body.phone), e = clean(body.email).toLowerCase(), c = clean(body.cedula), pl = clean(body.vehiclePlate).toUpperCase();
 
-    // Nuclear Fix: Remove existing pending/cancelled driver with same identifiers
-    await db.prepare("DELETE FROM drivers WHERE (phone=? OR email=? OR cedula=? OR vehicle_plate=?) AND status != 'active'").bind(p, e, c, pl).run();
+    // NUCLEAR FIX: Check if driver already exists to give a better message or delete them
+    const existing = await db.prepare("SELECT id, status FROM drivers WHERE phone=? OR email=? OR cedula=? OR vehicle_plate=?").bind(p, e, c, pl).first();
+
+    if (existing) {
+        if (existing.status === 'active') {
+            throw new HttpError(409, "Ya existe un conductor activo con estos datos.");
+        } else {
+            // Delete the old non-active record to allow re-registration
+            await db.prepare("DELETE FROM driver_documents WHERE driver_id=?").bind(existing.id).run();
+            await db.prepare("DELETE FROM driver_sessions WHERE driver_id=?").bind(existing.id).run();
+            await db.prepare("DELETE FROM drivers WHERE id=?").bind(existing.id).run();
+        }
+    }
 
     const salt = crypto.randomUUID().replaceAll("-", ""), hash = await passwordHash(body.password, salt), did = id("DRV"), stamp = nowIso();
     const result = await db.prepare(`INSERT INTO drivers(public_id,first_name,last_name,email,phone,password_hash,password_salt,cedula,vehicle_type,vehicle_brand,vehicle_model,vehicle_color,vehicle_plate,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,'pending',?,?)`)
@@ -175,7 +187,8 @@ async function handleApi(request, env, url, headers) {
     const input = clean(body.phone || body.email);
     const driver = await db.prepare(`SELECT * FROM drivers WHERE phone=? OR email=?`).bind(phone(input), input.toLowerCase()).first();
     if (!driver || await passwordHash(body.password, driver.password_salt) !== driver.password_hash) throw new HttpError(401, "Credenciales incorrectas.");
-    if (driver.status !== "active") throw new HttpError(403, "Cuenta no activa.");
+    if (driver.status !== "active") throw new HttpError(403, `Tu cuenta está ${driver.status === "pending" ? "en revisión" : "suspendida"}.`);
+
     const token = await createSession(db, "driver_sessions", "driver_id", driver.id);
     return json({ ok: true, driver: driverView(driver) }, 200, {
       "Set-Cookie": `taxote_driver_session=${token}; Path=/; Secure; SameSite=Lax; HttpOnly; Domain=${url.hostname}; Max-Age=${SESSION_DAYS * 86400}`,
