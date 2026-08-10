@@ -5,15 +5,14 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <style>
-    html,body,#mapWrapper{width:100%;height:100%;margin:0;padding:0;overflow:hidden;background:#fff}
+    html,body,#mapWrapper,#map{width:100%;height:100%;margin:0;padding:0;overflow:hidden;background:#fff}
     #mapWrapper{position:absolute;inset:0;overflow:hidden;}
 
-    /* ESTRUCTURA PARA ROTACIÓN */
     #map{
-        width: 180% !important; height: 180% !important;
+        width: 200% !important; height: 200% !important;
         position: absolute !important;
-        top: -40% !important; left: -40% !important;
-        transition: transform 0.2s linear; /* Rotación fluida */
+        top: -50% !important; left: -50% !important;
+        transition: transform 0.2s linear;
     }
 
     .leaflet-control-attribution{display:none}
@@ -21,100 +20,87 @@
     /* Top Nav Panel */
     #navPanel{
         position:absolute;top:calc(10px + env(safe-area-inset-top));left:15px;right:15px;z-index:2000;
-        background:#0b2e47;border-radius:14px;box-shadow:0 10px 30px rgba(0,0,0,0.3);
-        display:flex;align-items:center;padding:15px 20px;gap:18px;
-        color:#fff;font-family:Arial, sans-serif;
-        transform: translateY(-250%); transition: transform 0.5s ease;
+        background:#0b2e47;border-radius:14px;box-shadow:0 8px 25px rgba(0,0,0,0.3);
+        display:flex;align-items:center;padding:12px 18px;gap:15px;
+        color:#fff;font-family:sans-serif;
+        transform: translateY(-250%); transition: transform 0.4s ease;
     }
-    #navIcon{width:40px;height:40px;display:grid;place-items:center;font-size:28px;font-weight:bold;}
-    #navText{display:flex;flex-direction:column;gap:2px}
-    #navDistance{font:700 20px Arial;line-height:1}
-    #navStreet{font:400 15px Arial;opacity:0.9;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:200px}
+    #navIcon{width:36px;height:36px;display:grid;place-items:center;font-size:24px;font-weight:bold;background:rgba(255,255,255,0.1);border-radius:8px;}
+    #navText{display:flex;flex-direction:column;gap:1px;min-width:0}
+    #navDistance{font:700 18px Arial;line-height:1}
+    #navStreet{font:400 14px Arial;opacity:0.9;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 
     /* Trip Panel */
     #tripPanel{
         position:absolute;bottom:0;left:0;right:0;z-index:2000;
         background:#fff;border-top-left-radius:24px;border-top-right-radius:24px;
-        box-shadow:0 -10px 40px rgba(0,0,0,0.1);
-        display:flex;flex-direction:column;padding:12px 20px calc(20px + env(safe-area-inset-bottom)) 20px;
-        font-family:Arial, sans-serif;
+        box-shadow:0 -8px 30px rgba(0,0,0,0.12);
+        display:flex;flex-direction:column;padding:10px 18px calc(15px + env(safe-area-inset-bottom)) 18px;
+        font-family:sans-serif;
+        transition: transform 0.4s ease;
+        max-height: 80vh;
         transform: translateY(110%);
-        transition: transform 0.5s ease;
-        max-height: 85vh;
     }
+    #tripPanel.active-mode{transform:translateY(calc(100% - 128px));}
     #tripPanel.expanded{transform:translateY(0) !important;}
-    #tripPanel.active-mode:not(.expanded){transform:translateY(calc(100% - 132px)) !important;}
 
-    #tripHandle{width:64px;height:7px;background:#c8ced5;border-radius:5px;margin:0 auto 15px auto;cursor:grab;touch-action:none;flex:0 0 auto;}
-    #tripContent{display:flex;flex-direction:column;width:100%;gap:15px;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;padding-bottom:10px;}
+    #tripHandle{width:50px;height:5px;background:#dfe3e8;border-radius:3px;margin:0 auto 12px auto;cursor:grab;touch-action:none;flex:0 0 auto;}
+    #tripContent{display:flex;flex-direction:column;width:100%;gap:12px;overflow-y:auto;overscroll-behavior:contain;padding-bottom:10px;}
 
     #tripOfferControls, #tripActiveHeader { display:none; width:100%; }
 
-    .route-details-box { display: flex; flex-direction: column; gap: 12px; padding: 15px; background: #f8f9fa; border-radius: 14px; border: 1px solid #e9ecef; }
-    .client-header { display: flex; align-items: center; gap: 10px; margin-bottom: 5px; }
-    .client-avatar { width: 36px; height: 36px; background: #0b2e47; color: #fff; border-radius: 50%; display: grid; place-items: center; font-weight: 800; font-size: 14px; }
-    .client-name { font: 800 18px Arial; color: #000; }
+    .route-details-box { display: flex; flex-direction: column; gap: 10px; padding: 12px; background: #f8f9fa; border-radius: 12px; border: 1px solid #edf2f7; }
+    .client-header { display: flex; align-items: center; gap: 10px; }
+    .client-avatar { width: 32px; height: 32px; background: #0b2e47; color: #fff; border-radius: 50%; display: grid; place-items: center; font-weight: 800; font-size: 13px; }
+    .client-name { font: 800 16px Arial; color: #000; }
 
-    .location-list { display: flex; flex-direction: column; gap: 8px; position: relative; padding-left: 20px; }
-    .location-list::before { content: ''; position: absolute; left: 4px; top: 8px; bottom: 8px; width: 2px; background: #dee2e6; }
-    .location-entry { position: relative; font-size: 14px; color: #444; }
-    .location-entry::after { content: ''; position: absolute; left: -20px; top: 5px; width: 10px; height: 10px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+    .location-list { display: flex; flex-direction: column; gap: 6px; padding-left: 18px; position: relative; }
+    .location-list::before { content: ''; position: absolute; left: 4px; top: 8px; bottom: 8px; width: 2px; background: #e2e8f0; }
+    .location-entry { position: relative; font-size: 13px; color: #4a5568; line-height: 1.2; }
+    .location-entry::after { content: ''; position: absolute; left: -18px; top: 4px; width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid #fff; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
     .entry-a::after { background: #000; }
     .entry-b::after { background: #1e88e5; }
     .entry-c::after { background: #ffc107; }
-    .location-label { font-weight: 800; color: #888; font-size: 10px; text-transform: uppercase; margin-right: 5px; }
+    .location-label { font-weight: 800; color: #a0aec0; font-size: 9px; text-transform: uppercase; margin-right: 4px; }
 
-    .price-row { display: flex; justify-content: space-between; align-items: center; border-top: 1px solid #e9ecef; padding-top: 10px; margin-top: 5px; }
-    .price-val { font: 800 24px Arial; color: #2e7d32; }
-    .time-val { font: 700 14px Arial; color: #666; }
+    .price-row { display: flex; justify-content: space-between; align-items: center; border-top: 1px solid #edf2f7; padding-top: 8px; }
+    .price-val { font: 800 22px Arial; color: #2e7d32; }
+    .time-val { font: 700 13px Arial; color: #718096; }
 
-    .note-row { background: #fff8e1; border-left: 4px solid #ffc107; padding: 10px; border-radius: 4px; font-size: 13px; font-style: italic; color: #555; }
+    .note-row { background: #fffbeb; border-left: 3px solid #fbbf24; padding: 8px; border-radius: 4px; font-size: 12px; font-style: italic; color: #5a67d8; }
 
     .btn{
-        height:56px; border-radius:15px; display:grid; place-items:center;
-        font:700 16px Arial; text-transform:uppercase; cursor:pointer; transition:all 0.2s;
+        height:52px; border-radius:12px; display:grid; place-items:center;
+        font:700 15px Arial; text-transform:uppercase; cursor:pointer; transition:background 0.2s;
     }
-    .btn-red{background:#d32f2f; color:#fff; flex:1;}
-    .btn-green{background:#2e7d32; color:#fff; flex:1.5;}
-    .btn-black{background:#000; color:#fff; flex:1.5}
+    .btn-red{background:#e53e3e; color:#fff; flex:1;}
+    .btn-green{background:#38a169; color:#fff; flex:1.5;}
+    .btn-black{background:#1a202c; color:#fff; flex:1.5}
 
-    #tripTime{font:700 30px Arial;color:#c0392b;line-height:1}
-    #tripTime span{font-size:18px;margin-left:3px}
-    #tripStats{font:400 14px Arial;color:#666}
+    #tripTime{font:700 28px Arial;color:#e53e3e;line-height:1}
+    #tripTime span{font-size:16px;margin-left:2px}
+    #tripStats{font:400 13px Arial;color:#718096}
 
     #recenterBtn{
-        position:absolute;bottom:calc(20px + env(safe-area-inset-bottom));right:20px;z-index:2500;
-        width:60px;height:60px;border-radius:50%;background:#0b2e47;
-        box-shadow:0 6px 20px rgba(0,0,0,0.2);display:grid;place-items:center;
-        font-size:28px;color:#fff;cursor:pointer;border:2px solid #fff;
+        position:absolute;bottom:calc(15px + env(safe-area-inset-bottom));right:15px;z-index:2500;
+        width:54px;height:54px;border-radius:50%;background:#0b2e47;
+        box-shadow:0 4px 15px rgba(0,0,0,0.2);display:grid;place-items:center;
+        font-size:24px;color:#fff;cursor:pointer;border:2px solid #fff;
     }
-    .active-mode-layout #recenterBtn { bottom: calc(130px + env(safe-area-inset-bottom)); }
+    .active-mode-layout #recenterBtn { bottom: calc(135px + env(safe-area-inset-bottom)); }
 
     .point-marker {
-        display: grid; place-items: center; width: 40px; height: 44px;
-        border-radius: 50%; border: 4px solid #fff; color: #fff;
-        font: 800 18px Arial; box-shadow: 0 6px 15px rgba(0,0,0,0.4);
+        display: grid; place-items: center; width: 36px; height: 36px;
+        border-radius: 50%; border: 3px solid #fff; color: #fff;
+        font: 800 16px Arial; box-shadow: 0 4px 10px rgba(0,0,0,0.3);
     }
     .point-a { background: #000; }
     .point-b { background: #1e88e5; }
     .point-c { background: #ffc107; color: #000; }
 
     .driver-car-container { z-index: 5000 !important; }
-    .driver-car{ display:block; width:38px; height:48px; position:relative; }
-    .driver-car svg{ display:block;width:100%;height:100%; filter: drop-shadow(0 3px 5px rgba(0,0,0,0.3)); }
-
-    .car-pulse {
-        position: absolute; top: 50%; left: 50%; width: 60px; height: 60px;
-        margin-left: -30px; margin-top: -30px; background: rgba(30,136,229,0.2);
-        border-radius: 50%; transform: scale(0.5); animation: pulse-ring 2.5s infinite; z-index: -1;
-    }
-    @keyframes pulse-ring { 0% { transform: scale(0.4); opacity: 0.8; } 100% { transform: scale(1.4); opacity: 0; } }
-
-    #queuedCard{
-        position:absolute;right:12px;top:calc(88px + env(safe-area-inset-top));z-index:2600;
-        width:min(250px,calc(100vw - 24px));background:#fff;border-radius:16px;
-        box-shadow:0 12px 30px rgba(0,0,0,.22);padding:14px;display:none;flex-direction:column;
-    }
+    .driver-car{ display:block; width:34px; height:44px; position:relative; }
+    .driver-car svg{ display:block;width:100%;height:100%; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3)); }
   </style>
 </head>
 <body>
@@ -122,27 +108,20 @@
   <div id="navPanel"><div id="navIcon">A</div><div id="navText"><div id="navDistance">-- m</div><div id="navStreet">Calculando...</div></div></div>
   <div id="recenterBtn" onclick="recenterMap()">⌖</div>
 
-  <div id="queuedCard">
-    <b style="color:#064b44;font-size:12px">SERVICIO EN COLA</b>
-    <span id="queuedPrice" style="font-size:18px;font-weight:bold;color:#0b2e47">RD$ --</span>
-    <small id="queuedText" style="color:#666;margin:5px 0">Esperando...</small>
-    <button onclick="TaxoteAPI.onAction('queued_release')" style="background:#d32f2f;color:#fff;border:0;padding:10px;border-radius:8px;font-weight:bold">LIBERAR</button>
-  </div>
-
   <div id="tripPanel">
     <div id="tripHandle"></div>
     <div id="tripContent">
-      <div id="tripOfferControls" style="display:none; justify-content:space-between; gap:12px;">
+      <div id="tripOfferControls" style="display:none; justify-content:space-between; gap:10px;">
           <div class="btn btn-red" onclick="TaxoteAPI.onAction('reject')">RECHAZAR</div>
           <div class="btn btn-green" onclick="TaxoteAPI.onAction('primary')">ACEPTAR</div>
       </div>
 
-      <div id="tripActiveHeader" style="display:none; align-items:center; justify-content:space-between; gap:12px;">
+      <div id="tripActiveHeader" style="display:none; align-items:center; justify-content:space-between; gap:10px;">
           <div id="tripInfo">
               <div id="tripTime">--<span>min</span></div>
               <div id="tripStats">-- km • --:--</div>
           </div>
-          <div id="tripActionButton" class="btn btn-black" style="min-width:140px" onclick="handleTripAction()">LLEGUÉ</div>
+          <div id="tripActionButton" class="btn btn-black" style="min-width:130px" onclick="handleTripAction()">LLEGUÉ</div>
       </div>
 
       <div id="tripDetails" class="route-details-box">
@@ -151,7 +130,7 @@
               <div class="client-name" id="clientName">Pasajero</div>
           </div>
           <div class="location-list" id="routeWaypointsList"></div>
-          <div class="note-row" id="tripNoteBox" style="display:none;"></div>
+          <div id="tripNoteBox" class="note-row" style="display:none;"></div>
           <div class="price-row">
               <div class="price-val" id="detailPrice">RD$ --</div>
               <div class="time-val" id="detailTime">--:-- · --/--</div>
@@ -162,16 +141,39 @@
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script>
-    const map=L.map('map',{zoomControl:false,touchZoom:true,dragging:true,zoomSnap:.1}).setView([18.5638,-70.0900],13);
+    const map=L.map('map',{zoomControl:false,touchZoom:true,dragging:true,zoomSnap:.1,fadeAnimation:false}).setView([18.5638,-70.0900],13);
     L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png').addTo(map);
 
     let routeLayers=[]; let driverMarker=null; let activeRoutePoints=[]; let currentWaypoints=[]; let nextWaypointIndex=-1;
     let isShowingOffer = false; let currentBearing = 0; let lastPos = null;
     let isGPSLock = true;
 
+    // TOUCH SLIDING FOR PANEL
+    const panel = document.getElementById('tripPanel');
+    const handle = document.getElementById('tripHandle');
+    let startY, startTranslateY = 0;
+
+    handle.addEventListener('touchstart', (e) => {
+        startY = e.touches[0].clientY;
+        panel.style.transition = 'none';
+    });
+
+    handle.addEventListener('touchmove', (e) => {
+        const deltaY = e.touches[0].clientY - startY;
+        if (deltaY < 0) { // Sliding up
+             panel.classList.add('expanded');
+        } else if (deltaY > 50) { // Sliding down
+             panel.classList.remove('expanded');
+        }
+    });
+
+    handle.addEventListener('touchend', () => {
+        panel.style.transition = 'transform 0.4s ease';
+    });
+
     function carIcon(state,bearing){
       const svg=`<svg viewBox="0 0 64 96"><path d="M15 10C17 4 22 2 32 2s15 2 17 8l7 20v50c0 8-5 14-13 14H21C13 94 8 88 8 80V30z" fill="#f4c400" stroke="#071f33" stroke-width="3"/><path d="M17 26l5-14h20l5 14zM15 34h34v22H15zM18 63h28l4 16H14z" fill="#0b2e47"/><rect x="22" y="38" width="20" height="15" rx="4" fill="#fff"/><path d="M6 34H2v17h6M58 34h4v17h-6" fill="#071f33"/></svg>`;
-      return L.divIcon({className:'driver-car-container', html:`<div class="car-pulse"></div><div class="driver-car" style="transform: rotate(${bearing}deg)">${svg}</div>`, iconSize:[38,48], iconAnchor:[19,24]});
+      return L.divIcon({className:'driver-car-container', html:`<div class="driver-car" style="transform: rotate(${bearing}deg)">${svg}</div>`, iconSize:[38,48], iconAnchor:[19,24]});
     }
 
     function pointIcon(label, type, active) {
@@ -196,19 +198,18 @@
       lastPos=pos;
       currentBearing = Number(bearing)||0;
 
-      if(isGPSLock && !isShowingOffer){
+      if(isGPSLock){
           const rot = -currentBearing;
           document.getElementById('map').style.transform = `rotateZ(${rot}deg)`;
           document.querySelectorAll('.point-marker').forEach(m => m.style.transform = `rotate(${-rot}deg)`);
-
-          const offset = getOffsetPoint(pos, 110, currentBearing);
-          if(center) map.flyTo(offset, 17.5, {duration: 0.8});
+          const offset = getOffsetPoint(pos, 100, currentBearing);
+          if(center) map.setView(offset, 17.5, {animate:true});
       }
 
       if(!driverMarker) driverMarker=L.marker(pos,{icon:carIcon(state, isGPSLock?0:currentBearing),zIndexOffset:5000}).addTo(map);
       else { driverMarker.setLatLng(pos); driverMarker.setIcon(carIcon(state, isGPSLock?0:currentBearing)); }
 
-      if(!isShowingOffer && nextWaypointIndex>=0 && currentWaypoints[nextWaypointIndex]){
+      if(nextWaypointIndex>=0 && currentWaypoints[nextWaypointIndex]){
           const target=currentWaypoints[nextWaypointIndex];
           const d=distanceMeters(pos, [target.lat, target.lon]);
           document.getElementById('navDistance').textContent = d>1000?(d/1000).toFixed(1)+' km':Math.round(d)+' m';
@@ -217,7 +218,7 @@
           if (nextWaypointIndex === 0 && btn && btn.textContent === 'LLEGUÉ') {
               if (d > 50) {
                   btn.style.opacity = '0.4';
-                  document.getElementById('navStreet').textContent = 'Acércate a 50m para marcar llegada';
+                  document.getElementById('navStreet').textContent = 'Acércate a 50m';
               } else {
                   btn.style.opacity = '1';
                   document.getElementById('navStreet').textContent = target.addr || 'Recogida';
@@ -226,22 +227,26 @@
               if (btn) btn.style.opacity = '1';
               document.getElementById('navStreet').textContent = target.addr || 'Destino';
           }
-
           document.getElementById('navPanel').style.transform = 'translateY(0)';
       }
     };
 
     function recenterMap(){ isGPSLock=true; if(lastPos) window.updateDriverLocation(lastPos[0],lastPos[1],currentBearing,"busy",true); }
-    map.on('dragstart zoomstart', () => isGPSLock = false);
+
+    map.on('dragstart zoomstart', () => {
+        isGPSLock = false;
+        document.getElementById('map').style.transform = 'rotateZ(0deg)';
+        document.querySelectorAll('.point-marker').forEach(m => m.style.transform = 'rotate(0deg)');
+    });
 
     window.clearTaxoteRoute=function(){
       isShowingOffer=false; isGPSLock=true;
       document.body.classList.remove('active-mode-layout','offer-active');
       document.getElementById('map').style.transform='rotateZ(0deg)';
-      document.getElementById('tripPanel').classList.remove('expanded','active-mode');
+      panel.classList.remove('expanded','active-mode');
       routeLayers.forEach(l=>map.removeLayer(l)); routeLayers=[]; activeRoutePoints=[]; currentWaypoints=[];
       document.getElementById('navPanel').style.transform='translateY(-250%)';
-      document.getElementById('tripPanel').style.transform='translateY(110%)';
+      panel.style.transform='translateY(110%)';
     };
 
     window.showTaxoteRoute=function(pickup,stops,destination,route,activeIdx,actionLabel,price,totalMin,totalKm,passengerCount,paymentMethod,note,clientName,scheduledAt){
@@ -255,7 +260,7 @@
 
       const safeStops = Array.isArray(stops)?stops:[];
       currentWaypoints = [{lat:pickup.lat, lon:pickup.lon, label:'A', type:'a', addr:pickup.address},
-          ...safeStops.map((s,i)=>({lat:s.lat, lon:s.lon, label:(i+1).toString(), type:'c', addr:s.address})),
+          ...safeStops.map((s,i)=>({lat:s.lat, lon:s.lon, label:safeStops.length>1?'C'+(i+1):'C', type:'c', addr:s.address})),
           {lat:destination.lat, lon:destination.lon, label:'B', type:'b', addr:destination.address}];
       nextWaypointIndex = activeIdx;
 
@@ -281,11 +286,11 @@
       });
 
       if(isShowingOffer){
-          document.getElementById('tripPanel').style.transform='translateY(calc(100% - 175px))';
+          panel.style.transform='translateY(calc(100% - 175px))';
           const validPoints = currentWaypoints.filter(w => Number.isFinite(w.lat) && Number.isFinite(w.lon));
           if(validPoints.length > 0) map.fitBounds(L.latLngBounds(validPoints.map(w => [w.lat, w.lon])), {padding:[50, 50]});
       } else {
-          document.getElementById('tripPanel').classList.add('active-mode');
+          panel.classList.add('active-mode');
           document.getElementById('tripActionButton').textContent=actionLabel||'LLEGUÉ';
           isGPSLock = true;
           if(lastPos) window.updateDriverLocation(lastPos[0], lastPos[1], currentBearing, "busy", true);
@@ -306,13 +311,6 @@
         }
     };
 
-    window.showQueuedRide=function(r){
-        document.getElementById('queuedPrice').textContent='RD$ '+(r.priceDop||'--');
-        document.getElementById('queuedText').textContent='Prox: '+(r.pickup?.address||'Viaje');
-        document.getElementById('queuedCard').style.display='flex';
-    };
-    window.hideQueuedRide=function(){ document.getElementById('queuedCard').style.display='none'; };
-
     function handleTripAction() {
         const btn = document.getElementById('tripActionButton');
         if (btn.textContent === 'LLEGUÉ' && nextWaypointIndex === 0) {
@@ -320,10 +318,7 @@
             const target = currentWaypoints[0];
             if (pos && target) {
                 const d = distanceMeters(pos, [target.lat, target.lon]);
-                if (d > 50) {
-                    alert('Acércate a 50m para marcar llegada.');
-                    return;
-                }
+                if (d > 50) return; // Locked
             }
         }
         TaxoteAPI.onAction('primary');

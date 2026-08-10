@@ -10,6 +10,10 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
+import android.hardware.Sensor;
+import android.hardware.SensorEvent;
+import android.hardware.SensorEventListener;
+import android.hardware.SensorManager;
 import android.location.Location;
 import android.location.LocationListener;
 import android.location.LocationManager;
@@ -23,7 +27,7 @@ import android.os.Looper;
 
 import org.json.JSONObject;
 
-public class LocationService extends Service implements LocationListener {
+public class LocationService extends Service implements LocationListener, SensorEventListener {
     public static final String ACTION_STOP = "com.taxote.driver.STOP_LOCATION";
     public static final String ACTION_LOCATION_UPDATED = "com.taxote.driver.LOCATION_UPDATED";
     public static final String EXTRA_LAT = "extra_lat";
@@ -39,10 +43,17 @@ public class LocationService extends Service implements LocationListener {
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private LocationManager locationManager;
+    private SensorManager sensorManager;
     private SharedPreferences preferences;
     private Location lastLocation;
     private long lastPostedAt;
     private int lastUnreadCount = -1;
+    private float currentHeading = 0f;
+
+    private final float[] accelerometerReading = new float[3];
+    private final float[] magnetometerReading = new float[3];
+    private final float[] rotationMatrix = new float[9];
+    private final float[] orientationAngles = new float[3];
 
     private final Runnable locationHeartbeat = new Runnable() {
         @Override public void run() {
@@ -80,6 +91,7 @@ public class LocationService extends Service implements LocationListener {
         ApiClient.initialize(this);
         preferences = getSharedPreferences("taxote_driver", MODE_PRIVATE);
         locationManager = (LocationManager) getSystemService(LOCATION_SERVICE);
+        sensorManager = (SensorManager) getSystemService(SENSOR_SERVICE);
         createNotificationChannel();
     }
 
@@ -91,12 +103,44 @@ public class LocationService extends Service implements LocationListener {
         }
         startForeground(NOTIFICATION_ID, buildNotification());
         startLocationUpdates();
+        startSensorUpdates();
         handler.removeCallbacks(locationHeartbeat);
         handler.postDelayed(locationHeartbeat, HEARTBEAT_INTERVAL_MS);
         handler.removeCallbacks(chatHeartbeat);
         handler.post(chatHeartbeat);
         return START_STICKY;
     }
+
+    private void startSensorUpdates() {
+        if (sensorManager != null) {
+            Sensor accel = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
+            if (accel != null) sensorManager.registerListener(this, accel, SensorManager.SENSOR_DELAY_UI);
+            Sensor mag = sensorManager.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD);
+            if (mag != null) sensorManager.registerListener(this, mag, SensorManager.SENSOR_DELAY_UI);
+        }
+    }
+
+    @Override public void onSensorChanged(SensorEvent event) {
+        if (event.sensor.getType() == Sensor.TYPE_ACCELEROMETER) {
+            System.arraycopy(event.values, 0, accelerometerReading, 0, accelerometerReading.length);
+        } else if (event.sensor.getType() == Sensor.TYPE_MAGNETIC_FIELD) {
+            System.arraycopy(event.values, 0, magnetometerReading, 0, magnetometerReading.length);
+        }
+        updateOrientationAngles();
+    }
+
+    private void updateOrientationAngles() {
+        if (SensorManager.getRotationMatrix(rotationMatrix, null, accelerometerReading, magnetometerReading)) {
+            SensorManager.getOrientation(rotationMatrix, orientationAngles);
+            float heading = (float) Math.toDegrees(orientationAngles[0]);
+            currentHeading = (heading + 360) % 360;
+            if (lastLocation != null && !lastLocation.hasBearing()) {
+                preferences.edit().putFloat("last_bearing", currentHeading).apply();
+            }
+        }
+    }
+
+    @Override public void onAccuracyChanged(Sensor sensor, int accuracy) {}
 
     private void createNotificationChannel() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return;
