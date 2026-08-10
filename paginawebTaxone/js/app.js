@@ -1978,7 +1978,7 @@ document.addEventListener("keydown", (event) => {
   }
 });
 loadConnectedDrivers();
-setInterval(loadConnectedDrivers, 3000);
+setInterval(loadConnectedDrivers, 10000);
 
 function driverLocationIcon(driver) {
   const state = ["available", "busy", "offline"].includes(driver.connectionState) ? driver.connectionState : "offline";
