@@ -7,9 +7,6 @@ const CORE_SCHEMA = [
   `CREATE TABLE IF NOT EXISTS addresses (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, type TEXT, house_number TEXT, street TEXT, suburb TEXT, city TEXT, province TEXT, postcode TEXT, lat REAL NOT NULL, lon REAL NOT NULL, place_id TEXT UNIQUE)`,
   `CREATE INDEX IF NOT EXISTS idx_addr_lat_lon ON addresses(lat, lon)`,
   `CREATE VIRTUAL TABLE IF NOT EXISTS addresses_fts USING fts5(name, street, suburb, city, province, content='addresses', content_rowid='id', tokenize='unicode61 remove_diacritics 2')`,
-  `CREATE TRIGGER IF NOT EXISTS addr_ai AFTER INSERT ON addresses BEGIN INSERT INTO addresses_fts(rowid,name,street,suburb,city,province) VALUES(new.id,new.name,new.street,new.suburb,new.city,new.province); END`,
-  `CREATE TRIGGER IF NOT EXISTS addr_ad AFTER DELETE ON addresses BEGIN INSERT INTO addresses_fts(addresses_fts,rowid,name,street,suburb,city,province) VALUES('delete',old.id,old.name,old.street,old.suburb,old.city,old.province); END`,
-  `CREATE TRIGGER IF NOT EXISTS addr_au AFTER UPDATE ON addresses BEGIN INSERT INTO addresses_fts(addresses_fts,rowid,name,street,suburb,city,province) VALUES('delete',old.id,old.name,old.street,old.suburb,old.city,old.province); INSERT INTO addresses_fts(rowid,name,street,suburb,city,province) VALUES(new.id,new.name,new.street,new.suburb,new.city,new.province); END`,
   `CREATE TABLE IF NOT EXISTS profiles (id INTEGER PRIMARY KEY AUTOINCREMENT, public_id TEXT NOT NULL UNIQUE, kind TEXT NOT NULL DEFAULT 'guest', name TEXT NOT NULL, phone TEXT NOT NULL UNIQUE, email TEXT COLLATE NOCASE UNIQUE, password_hash TEXT, password_salt TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS sessions (token_hash TEXT PRIMARY KEY, profile_id INTEGER NOT NULL, expires_at TEXT NOT NULL, created_at TEXT NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS drivers (id INTEGER PRIMARY KEY AUTOINCREMENT, public_id TEXT NOT NULL UNIQUE, first_name TEXT NOT NULL, last_name TEXT NOT NULL, email TEXT NOT NULL COLLATE NOCASE UNIQUE, phone TEXT NOT NULL UNIQUE, password_hash TEXT NOT NULL, password_salt TEXT NOT NULL, cedula TEXT NOT NULL UNIQUE, vehicle_type TEXT NOT NULL, vehicle_brand TEXT NOT NULL, vehicle_model TEXT NOT NULL, vehicle_color TEXT NOT NULL, vehicle_plate TEXT NOT NULL COLLATE NOCASE UNIQUE, payment_method TEXT, points_balance INTEGER NOT NULL DEFAULT 0, fcm_token TEXT, status TEXT NOT NULL DEFAULT 'pending', review_message TEXT, is_online INTEGER NOT NULL DEFAULT 0, is_available INTEGER NOT NULL DEFAULT 0, current_lat REAL, current_lon REAL, current_accuracy REAL, current_bearing REAL, current_speed_kph REAL, last_seen_at TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, reviewed_at TEXT, last_login_at TEXT)`,
@@ -59,7 +56,7 @@ export default {
     if (url.pathname === "/api/whatsapp/webhook") return postWhatsApp(request, env);
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders() });
     try {
-      if (!db) throw new HttpError(503, "Base de datos no vinculada.");
+      if (!db) throw new HttpError(503, "La base de datos taxote_db no está vinculada.");
       await ensureSchema(db);
       const path = url.pathname.replace(/\/$/, ""), method = request.method;
 
@@ -70,7 +67,7 @@ export default {
           const token = id("ADM"), expires = new Date(); expires.setHours(23, 59, 59, 999);
           return json({ ok: true, token }, 200, { "Set-Cookie": `taxote_admin_session=${token}; Path=/; Secure; SameSite=Lax; Expires=${expires.toUTCString()}` });
         }
-        throw new HttpError(401, "Acceso denegado.");
+        throw new HttpError(401, "Usuario o contraseña de administrador incorrectos.");
       }
 
       // Midnight cleanup
@@ -93,6 +90,7 @@ export default {
       return await handleApi(request, env, url);
     } catch (error) {
       const status = error instanceof HttpError ? error.status : 500;
+      console.error("TAXOTE API ERROR:", error);
       return json({ error: error.message || "Error interno." }, status);
     }
   }
@@ -145,7 +143,43 @@ async function handleApi(request, env, url) {
     return row ? json(addressView(row)) : json({ error: "No encontrada" }, 404);
   }
 
+  // Auth User
+  if (path === "/api/auth/register" && method === "POST") {
+    const body = await bodyJson(request);
+    const salt = crypto.randomUUID(), hash = await passwordHash(body.password, salt), stamp = nowIso(), publicId = id("USR");
+    const result = await db.prepare(`INSERT INTO profiles(public_id,kind,name,phone,email,password_hash,password_salt,created_at,updated_at) VALUES(?,'registered',?,?,?,?,?,?,?)`).bind(publicId, clean(body.name), phone(body.phone), clean(body.email).toLowerCase(), hash, salt, stamp, stamp).run();
+    const profile = await db.prepare(`SELECT * FROM profiles WHERE id=?`).bind(result.meta.last_row_id).first();
+    const token = await createSession(db, "sessions", "profile_id", profile.id);
+    return json({ user: profileView(profile) }, 201, { "Set-Cookie": sessionCookie("taxote_user_session", token) });
+  }
+  if (path === "/api/auth/login" && method === "POST") {
+    const body = await bodyJson(request);
+    const profile = await db.prepare(`SELECT * FROM profiles WHERE phone=? AND kind='registered'`).bind(phone(body.phone)).first();
+    if (!profile || await passwordHash(body.password, profile.password_salt) !== profile.password_hash) throw new HttpError(401, "Credenciales incorrectas.");
+    const token = await createSession(db, "sessions", "profile_id", profile.id);
+    return json({ user: profileView(profile) }, 200, { "Set-Cookie": sessionCookie("taxote_user_session", token) });
+  }
+  if (path === "/api/auth/me" && method === "GET") {
+    const profile = await userSession(request, db);
+    if (!profile) throw new HttpError(401, "No hay sesión.");
+    return json({ user: profileView(profile) });
+  }
+
   // Driver Endpoints
+  if (path === "/api/driver/register" && method === "POST") {
+    const body = await bodyJson(request);
+    const salt = crypto.randomUUID(), hash = await passwordHash(body.password, salt), stamp = nowIso(), publicId = id("DRV");
+    await db.prepare(`INSERT INTO drivers(public_id,first_name,last_name,email,phone,password_hash,password_salt,cedula,vehicle_type,vehicle_brand,vehicle_model,vehicle_color,vehicle_plate,payment_method,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,'pending',?,?)`).bind(publicId, clean(body.firstName), clean(body.lastName), clean(body.email).toLowerCase(), phone(body.phone), hash, salt, clean(body.cedula), clean(body.vehicleType), clean(body.vehicleBrand), clean(body.vehicleModel), clean(body.vehicleColor), clean(body.vehiclePlate).toUpperCase(), clean(body.paymentMethod), stamp, stamp).run();
+    return json({ ok: true, driverId: publicId }, 201);
+  }
+  if (path === "/api/driver/login" && method === "POST") {
+    const body = await bodyJson(request);
+    const driver = await db.prepare(`SELECT * FROM drivers WHERE phone=?`).bind(phone(body.phone)).first();
+    if (!driver || await passwordHash(body.password, driver.password_salt) !== driver.password_hash) throw new HttpError(401, "Credenciales incorrectas.");
+    if (driver.status !== "active") throw new HttpError(403, "Cuenta no activa.");
+    const token = await createSession(db, "driver_sessions", "driver_id", driver.id);
+    return json({ driver: driverView(driver) }, 200, { "Set-Cookie": sessionCookie("taxote_driver_session", token) });
+  }
   if (path === "/api/driver/location" && method === "POST") {
     const driver = await driverSession(request, db); if (!driver) throw new HttpError(401, "Sesión expirada.");
     const body = await bodyJson(request), lat = safeNumber(body.lat, "Lat"), lon = safeNumber(body.lon, "Lon"), stamp = nowIso();
@@ -171,7 +205,7 @@ async function handleApi(request, env, url) {
   }
   if (path === "/api/dispatch/rides" && method === "GET") {
     const { results } = await db.prepare("SELECT r.*, d.first_name, d.last_name FROM rides r LEFT JOIN drivers d ON d.id=r.driver_id WHERE r.status NOT IN ('completed','cancelled') ORDER BY r.created_at DESC").all();
-    return json(results.map(r => ({ ...dispatchRideView(r), pickupLat: r.pickup_lat, pickupLon: r.pickup_lon, destinationLat: r.destination_lat, destinationLon: r.destination_lon })));
+    return json(results.map(r => ({ ...dispatchRideView(r), id: r.public_id, pickupLat: r.pickup_lat, pickupLon: r.pickup_lon, destinationLat: r.destination_lat, destinationLon: r.destination_lon })));
   }
   if (path.startsWith("/api/dispatch/rides/") && path.endsWith("/contacted") && method === "POST") {
     const rideId = path.split("/")[4], body = await bodyJson(request);
