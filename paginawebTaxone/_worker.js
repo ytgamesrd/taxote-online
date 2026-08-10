@@ -72,7 +72,7 @@ export default {
           const token = id("ADM");
           const expires = new Date(); expires.setHours(23, 59, 59, 999);
           return json({ ok: true, token }, 200, {
-            "Set-Cookie": `taxote_admin_session=${token}; Path=/; Secure; SameSite=Lax; HttpOnly; Domain=${url.hostname}; Expires=${expires.toUTCString()}`,
+            "Set-Cookie": `taxote_admin_session=${token}; Path=/; Secure; SameSite=Lax; HttpOnly; Domain=.taxote.online; Expires=${expires.toUTCString()}`,
             ...headers
           });
         }

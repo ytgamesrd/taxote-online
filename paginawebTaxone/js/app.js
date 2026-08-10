@@ -232,7 +232,8 @@ async function fetchJson(url, options = {}) {
     response = await fetch(url, {
       method: options.method || "GET",
       headers: { Accept: "application/json", ...(options.body ? { "Content-Type": "application/json" } : {}) },
-      body: options.body ? JSON.stringify(options.body) : undefined
+      body: options.body ? JSON.stringify(options.body) : undefined,
+      credentials: 'include'
     });
   } catch { throw new Error("Error de conexión."); }
   const body = await response.json().catch(() => ({}));

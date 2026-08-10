@@ -29,7 +29,8 @@ async function fetchJson(url, options={}) {
         const response = await fetch(url, {
             method: options.method || "GET",
             headers: { Accept: "application/json", ...(options.body ? { "Content-Type": "application/json" } : {}) },
-            body: options.body ? JSON.stringify(options.body) : undefined
+            body: options.body ? JSON.stringify(options.body) : undefined,
+            credentials: 'include'
         });
         const body = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(body.error || "Error en la petición.");
