@@ -479,9 +479,12 @@ body.panel-resize-active, body.panel-resize-active * { cursor: ew-resize !import
 
 .taxote-driver-car-wrapper { background: transparent; border: 0; }
 .taxote-driver-car-wrapper { transform-style: flat; }
-.taxote-driver-car { display: block; width: 20px; height: 22px; transform-origin: 50% 50%; filter: drop-shadow(0 3px 8px rgba(0,0,0,.45)); }
+.taxote-driver-car { display: block; width: 58px; height: 62px; transform-origin: 50% 50%; filter: drop-shadow(0 4px 12px rgba(0,0,0,.5)); }
 .taxote-driver-car img { display: block; width: 100%; height: 100%; object-fit: contain; }
-.taxote-driver-car.busy img { filter: hue-rotate(300deg) saturate(1.45) brightness(.9); }
+.taxote-driver-car.busy img {
+    filter: sepia(1) saturate(20) hue-rotate(330deg) brightness(0.9) contrast(1.5) drop-shadow(0 0 10px #ff9800) !important;
+}
+.taxote-driver-car.available img { filter: none !important; }
 .taxote-driver-car.offline img { filter: grayscale(1) brightness(.7); opacity: .82; }
 .live-map { position: absolute; z-index: 1; inset: 0; background: #dcecea; transition: filter 0.3s ease; }
 .live-map.dark-map { filter: invert(100%) hue-rotate(180deg) brightness(95%) contrast(90%); }

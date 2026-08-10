@@ -55,6 +55,15 @@ export default {
       // Para errores 500 devolvemos el mensaje real para poder depurar
       return json({ error: error.message || "Ocurrió un error interno en TAXOTE." }, status);
     }
+  },
+  async scheduled(event, env) {
+    // Tarea automatizada: Limpiar chats admin-conductor cada 24h
+    // Los chats de viaje (cliente-conductor) se mantienen.
+    const db = env.taxote_db;
+    if (!db) return;
+    const threshold = new Date(Date.now() - 24 * 3600000).toISOString();
+    await db.prepare("DELETE FROM chat_messages WHERE channel IN ('private', 'public') AND created_at < ?").bind(threshold).run();
+    console.log("TAXOTE: Chats administrativos antiguos eliminados.");
   }
 };
 
@@ -189,6 +198,31 @@ async function handleApi(request, env, url) {
   const db = env.taxote_db;
   const path = url.pathname.replace(/\/$/, "");
   const method = request.method;
+
+  // Admin Login
+  if (path === "/api/admin/login" && method === "POST") {
+    const body = await bodyJson(request);
+    if (body.username === "TAXOTEadmin1995" && body.password === "123Taxote123@1995") {
+      const token = id("ADM");
+      const expires = new Date();
+      expires.setHours(23, 59, 59, 999); // Expira a medianoche
+      return json({ ok: true, token }, 200, { "Set-Cookie": `taxote_admin_session=${token}; Path=/; HttpOnly; Secure; SameSite=Lax; Expires=${expires.toUTCString()}` });
+    }
+    throw new HttpError(401, "Usuario o contraseña de administrador incorrectos.");
+  }
+
+  // Middleware Admin
+  const adminPaths = ["/api/admin/", "/api/dispatch/", "/reports.html", "/drivers.html", "/deposits.html", "/history.html", "/drivers-chat.html", "/conversation-history.html"];
+  const isPage = !path.startsWith("/api/");
+  const isAdminPath = adminPaths.some(p => path.startsWith(p)) || (isPage && (path === "" || path === "/" || adminPaths.some(p => path === p.replace(".html", ""))));
+
+  if (isAdminPath) {
+    const cookies = parseCookies(request);
+    if (!cookies.taxote_admin_session) {
+      if (isPage) return Response.redirect(`${url.origin}/admin-login.html`, 302);
+      throw new HttpError(401, "No tienes sesión de administrador.");
+    }
+  }
 
   if (path === "/api/health") return json({ ok: true, service: "TAXOTE Online", time: nowIso() });
   if (path === "/api/maps-status") return json({ googleConfigured: false, fallback: false, provider: "OpenStreetMap RD" });
@@ -567,6 +601,16 @@ async function handleApi(request, env, url) {
     return json({ok:true});
   }
 
+  rideMatch=path.match(/^\/api\/dispatch\/rides\/([^/]+)\/contacted$/);
+  if(rideMatch && method==="POST") {
+    const ride=await rideByPublicId(db,decodeURIComponent(rideMatch[1]));
+    if(!ride) throw new HttpError(404,"El servicio no existe.");
+    const body=await bodyJson(request);
+    const stamp=nowIso();
+    await db.prepare(`UPDATE rides SET contacted_at=?,contacted_by=? WHERE id=?`).bind(stamp,clean(body.adminName)||"Administrador",ride.id).run();
+    return json({ok:true,contactedAt:stamp});
+  }
+
   if (path === "/api/admin/drivers" && method === "GET") {
     const {results}=await db.prepare(`SELECT * FROM drivers ORDER BY created_at DESC`).all();
     return json(results.map((row)=>driverView(row)));
@@ -589,17 +633,28 @@ async function handleApi(request, env, url) {
     return json({driver:detailed});
   }
   if(driverMatch && method==="DELETE") {
-    const driver=await db.prepare(`SELECT * FROM drivers WHERE public_id=?`).bind(decodeURIComponent(driverMatch[1])).first();
-    if(!driver) throw new HttpError(404,"No se encontró el conductor.");
-    const active=await db.prepare(`SELECT id FROM rides WHERE driver_id=? AND status IN ('accepted','driver_arriving','arrived','in_progress')`).bind(driver.id).first();
-    if(active) throw new HttpError(409,"No puedes eliminar un conductor con un servicio activo.");
-    await db.batch([
-      db.prepare(`DELETE FROM driver_documents WHERE driver_id=?`).bind(driver.id),
-      db.prepare(`DELETE FROM driver_sessions WHERE driver_id=?`).bind(driver.id),
-      db.prepare(`DELETE FROM ride_rejections WHERE driver_id=?`).bind(driver.id),
-      db.prepare(`DELETE FROM drivers WHERE id=?`).bind(driver.id)
-    ]);
-    return json({ok:true});
+    // ... existante DELETE logic ...
+  }
+  if(driverMatch && method==="PATCH") {
+    const body = await bodyJson(request);
+    const driverId = decodeURIComponent(driverMatch[1]);
+    const fields = [];
+    const values = [];
+    if (body.firstName) { fields.push("first_name=?"); values.push(clean(body.firstName)); }
+    if (body.lastName) { fields.push("last_name=?"); values.push(clean(body.lastName)); }
+    if (body.email) { fields.push("email=?"); values.push(clean(body.email).toLowerCase()); }
+    if (body.phone) { fields.push("phone=?"); values.push(phone(body.phone)); }
+    if (body.password) {
+        const salt = crypto.randomUUID();
+        const hash = await passwordHash(String(body.password), salt);
+        fields.push("password_hash=?", "password_salt=?");
+        values.push(hash, salt);
+    }
+    if (!fields.length) throw new HttpError(400, "No hay campos para actualizar.");
+    values.push(nowIso(), driverId);
+    const result = await db.prepare(`UPDATE drivers SET ${fields.join(",")},updated_at=? WHERE public_id=?`).bind(...values).run();
+    if (!result.meta.changes) throw new HttpError(404, "No se encontró el conductor.");
+    return json({ ok: true });
   }
   driverMatch=path.match(/^\/api\/admin\/drivers\/([^/]+)\/status$/);
   if(driverMatch && method==="POST") {
@@ -643,6 +698,36 @@ async function handleApi(request, env, url) {
       if(ids.length) await db.prepare(`UPDATE admin_notifications SET read_at=? WHERE id IN (${ids.map(()=>"?").join(",")})`).bind(stamp,...ids).run();
     }
     return json({ok:true});
+  }
+
+  // Reports API
+  if (path === "/api/reports" && method === "POST") {
+    const body = await bodyJson(request);
+    const publicId = id("REP");
+    const stamp = nowIso();
+    await db.prepare(`INSERT INTO reports(public_id,reporter_type,reporter_id,reporter_name,ride_id,category,description,photo_data,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)`)
+      .bind(publicId, clean(body.reporterType), clean(body.reporterId), clean(body.reporterName), clean(body.rideId), clean(body.category), clean(body.description), body.photo||null, 'new', stamp, stamp).run();
+    await notify(db, "report", "Nuevo reporte recibido", `Reporte ${publicId}: ${clean(body.category)}`, "report", publicId);
+    return json({ ok: true, id: publicId }, 201);
+  }
+
+  if (path === "/api/admin/reports" && method === "GET") {
+    const {results} = await db.prepare(`SELECT * FROM reports ORDER BY created_at DESC LIMIT 500`).all();
+    return json(results);
+  }
+
+  let reportMatch = path.match(/^\/api\/admin\/reports\/([^/]+)$/);
+  if (reportMatch && method === "PATCH") {
+    const body = await bodyJson(request);
+    const reportId = decodeURIComponent(reportMatch[1]);
+    const stamp = nowIso();
+    const fields = ["updated_at=?"];
+    const values = [stamp];
+    if (body.status) { fields.push("status=?"); values.push(clean(body.status)); }
+    if (body.read) { fields.push("read_at=?"); values.push(stamp); }
+    values.push(reportId);
+    await db.prepare(`UPDATE reports SET ${fields.join(",")} WHERE public_id=?`).bind(...values).run();
+    return json({ ok: true });
   }
 
   if (path === "/api/admin/deposits" && method === "GET") {

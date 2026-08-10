@@ -61,29 +61,11 @@ let dispatchTrips = [];
 const selectedLocations = { pickup: null, destination: null };
 const routeStops = [];
 
-let cancelAudio = null;
+const notificationSound = new Audio('/mp3/clipmouse.mp3');
 
 function playCancelSound() {
-  try {
-    if (!cancelAudio) {
-      // Create a simple, sharp double beep sound
-      const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-      const playBeep = (freq, start, duration) => {
-        const osc = audioCtx.createOscillator();
-        const gain = audioCtx.createGain();
-        osc.type = "square";
-        osc.frequency.setValueAtTime(freq, audioCtx.currentTime + start);
-        gain.gain.setValueAtTime(0.1, audioCtx.currentTime + start);
-        gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + start + duration);
-        osc.connect(gain);
-        gain.connect(audioCtx.destination);
-        osc.start(audioCtx.currentTime + start);
-        osc.stop(audioCtx.currentTime + start + duration);
-      };
-      playBeep(600, 0, 0.15);
-      playBeep(400, 0.2, 0.2);
-    }
-  } catch (e) { console.error("Error de audio:", e); }
+  notificationSound.currentTime = 0;
+  notificationSound.play().catch(e => console.error("Error al sonar MP3:", e));
 }
 
 // Resume audio context on first click to bypass browser blocks
@@ -1273,8 +1255,15 @@ function tripRowMarkup(trip, isNew = false) {
     : status === "in_progress"
       ? '<span class="trip-cancel-lock" title="Servicio iniciado: sólo el conductor puede terminarlo">▣</span>'
       : `<span class="trip-cancel-finished" title="${status === "completed" ? "Servicio terminado" : "Servicio cancelado"}">${status === "completed" ? "✓" : "—"}</span>`;
+
+  const viewAction = `<button class="trip-view-action" type="button" onclick="viewTripDetails('${escapeHtml(trip.id)}')" title="Ver detalles del viaje" style="border:0;background:none;font-size:16px;cursor:pointer;">👁</button>`;
+
+  const contactedAction = trip.contactedAt
+    ? `<span class="contacted-badge" style="background:#e3f5eb;color:#07613d;padding:2px 6px;border-radius:4px;font-size:9px;font-weight:700;" title="Contactado por ${escapeHtml(trip.contactedBy)} el ${new Date(trip.contactedAt).toLocaleString()}">📞 ${escapeHtml(trip.contactedBy)}</span>`
+    : `<button class="contact-btn" type="button" onclick="markTripContacted('${escapeHtml(trip.id)}')" style="padding:2px 6px;border:1px solid #0b2e47;border-radius:4px;background:#fff;color:#0b2e47;font-size:9px;font-weight:700;cursor:pointer;" title="Marcar como contactado">📞</button>`;
+
   return `<tr class="${isNew ? "new-trip" : ""}">
-    <td>${cancelAction}</td>
+    <td style="display:flex;gap:5px;align-items:center;justify-content:center;">${cancelAction} ${viewAction} ${contactedAction}</td>
     <td>${escapeHtml(trip.id)}<small>${escapeHtml(trip.service || "TAXOTE User")}</small></td>
     <td><span class="status-chip status-${status}">${statusLabels[status]}</span></td>
     <td>${escapeHtml(trip.passenger || "--")}</td>
@@ -1284,6 +1273,27 @@ function tripRowMarkup(trip, isNew = false) {
     <td><span class="trip-address">${escapeHtml(trip.destination || trip.route?.[trip.route.length - 1] || "--")}</span></td>
     <td class="trip-date">${dateLabel}</td>
   </tr>`;
+}
+
+async function markTripContacted(tripId) {
+    if (!confirm(`¿Marcar el viaje ${tripId} como contactado?`)) return;
+    try {
+        await fetchJson(`/api/dispatch/rides/${encodeURIComponent(tripId)}/contacted`, {
+            method: "POST",
+            body: { adminName: "Administrador" }
+        });
+        showToast(`Viaje ${tripId} marcado como contactado.`);
+        await loadDispatchTrips();
+    } catch (error) {
+        showToast(error.message);
+    }
+}
+
+function viewTripDetails(tripId) {
+    const trip = allTrips().find(t => t.id === tripId);
+    if (!trip) return;
+    const details = `ID: ${trip.id}\nEstado: ${trip.status}\nPasajero: ${trip.passenger} (${trip.phone})\nRecogida: ${trip.pickup}\nDestino: ${trip.destination}\nConductor: ${trip.driver}\nPrecio: RD$ ${trip.priceDop}`;
+    alert("DETALLES DEL VIAJE\n\n" + details);
 }
 
 const tripFilterControls = {
@@ -1600,7 +1610,10 @@ function renderConnectedDrivers() {
       <article class="driver ${driver.connectionState === "busy" ? "driver-busy" : ""}" data-driver-id="${escapeHtml(driver.id)}" role="button" tabindex="0" aria-label="Centrar mapa en ${escapeHtml(driver.name)}">
         ${avatarMarkup}
         <div class="driver-info"><b>${escapeHtml(driver.name)}</b><small>${escapeHtml(`${driver.vehicleBrand} ${driver.vehicleModel} · ${driver.vehicleColor}`)}</small></div>
-        <span class="eta ${driver.connectionState === "busy" ? "busy" : ""}">${escapeHtml(driverStatusLabel(driver))}</span>
+        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:5px;">
+            <span class="eta ${driver.connectionState === "busy" ? "busy" : ""}">${escapeHtml(driverStatusLabel(driver))}</span>
+            <a href="/drivers-chat.html?driver=${encodeURIComponent(driver.id)}" class="chat-btn" title="Conversar con ${escapeHtml(driver.name)}" onclick="event.stopPropagation()">💬</a>
+        </div>
       </article>
     `;
   }).join("");
@@ -1668,6 +1681,13 @@ function focusDriverOnMap(driverId) {
   document.querySelector("#map-card")?.scrollIntoView({ behavior: "smooth", block: "center" });
 }
 
+async function adminLogout() {
+    if(confirm("¿Seguro que deseas cerrar la sesión administrativa?")) {
+        document.cookie = "taxote_admin_session=; Path=/; Expires=Thu, 01 Jan 1970 00:00:01 GMT;";
+        location.href = "/admin-login.html";
+    }
+}
+
 async function loadConnectedDrivers() {
   if (!connectedDriversList) return;
   try {
@@ -1721,10 +1741,19 @@ function driverLocationIcon(driver) {
   const bearing = Number(driver.location?.bearing || 0);
   return L.divIcon({
     className: "taxote-driver-car-wrapper",
-    html: `<span class="taxote-driver-car ${state}" title="${state === "busy" ? "Conductor en servicio" : state === "available" ? "Conductor disponible" : "Última ubicación"}" style="transform:rotate(${bearing + 135}deg)"><img src="/assets/taxote-car.png" alt="" /></span>`,
-    iconSize: [28, 31],
-    iconAnchor: [14, 16]
+    html: `<span class="taxote-driver-car ${state}" title="${state === "busy" ? "Conductor en servicio" : state === "available" ? "Conductor disponible" : "Última ubicación"}" style="transform:rotate(${bearing}deg)"><img src="/assets/taxote-car.png" alt="" style="width:58px;height:58px;" /></span>`,
+    iconSize: [58, 58],
+    iconAnchor: [29, 29]
   });
+}
+
+function viewTripDetails(tripId) {
+    const trip = allTrips().find(t => t.id === tripId);
+    if (!trip) return;
+    showToast(`Cargando detalles de ${tripId}...`);
+    // Aquí podrías abrir un modal con toda la info: nota, paradas, etc.
+    // Por ahora mostramos los datos básicos en toast o consola
+    console.log("Detalles del viaje:", trip);
 }
 
 function driverLocationPopup(driver) {
@@ -1783,24 +1812,25 @@ let previousHeaderChatUnread = null;
 let dispatchAudioContext = null;
 
 function enableDispatchSounds() {
-  if (!dispatchAudioContext) dispatchAudioContext = new (window.AudioContext || window.webkitAudioContext)();
-  if (dispatchAudioContext.state === "suspended") dispatchAudioContext.resume();
+  if (dispatchAudioContext && dispatchAudioContext.state === "suspended") {
+    dispatchAudioContext.resume();
+  }
+  // Desbloqueo de MP3 en navegadores
+  notificationSound.play().then(() => {
+      notificationSound.pause();
+      notificationSound.currentTime = 0;
+  }).catch(() => { /* Bloqueo esperado hasta interacción */ });
+
   if ("Notification" in window && Notification.permission === "default") Notification.requestPermission().catch(() => {});
 }
 
 function playDispatchChatAlert() {
-  if (dispatchAudioContext?.state === "running") {
-    const oscillator = dispatchAudioContext.createOscillator();
-    const gain = dispatchAudioContext.createGain();
-    oscillator.frequency.value = 880;
-    gain.gain.setValueAtTime(.0001, dispatchAudioContext.currentTime);
-    gain.gain.exponentialRampToValueAtTime(.16, dispatchAudioContext.currentTime + .04);
-    gain.gain.setValueAtTime(.16, dispatchAudioContext.currentTime + 2.7);
-    gain.gain.exponentialRampToValueAtTime(.0001, dispatchAudioContext.currentTime + 3);
-    oscillator.connect(gain).connect(dispatchAudioContext.destination);
-    oscillator.start(); oscillator.stop(dispatchAudioContext.currentTime + 3);
+  notificationSound.currentTime = 0;
+  notificationSound.play().catch(e => console.error("Error al sonar MP3:", e));
+
+  if ("Notification" in window && Notification.permission === "granted") {
+      new Notification("Nuevo mensaje de conductor", { body: "Abre el Chat de conductores para responder." });
   }
-  if ("Notification" in window && Notification.permission === "granted") new Notification("Nuevo mensaje de conductor", { body: "Abre el Chat de conductores para responder." });
 }
 
 function notificationDestination(notification) {

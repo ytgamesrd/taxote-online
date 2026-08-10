@@ -644,26 +644,24 @@ function guestChatPhone() {
   return state.mode === "guest" ? phoneDigits(guestPhone.value) : "";
 }
 
+const userNotificationSound = new Audio('/mp3/clipmouse.mp3');
+
 function playUserChatAlert(message = "Tu conductor te escribió") {
-  try {
-    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-    const context = new AudioContextClass();
-    const oscillator = context.createOscillator();
-    const gain = context.createGain();
-    oscillator.type = "sine";
-    oscillator.frequency.value = 880;
-    gain.gain.value = .12;
-    oscillator.connect(gain).connect(context.destination);
-    oscillator.start();
-    oscillator.stop(context.currentTime + 3);
-    oscillator.addEventListener("ended", () => context.close());
-  } catch {}
+  userNotificationSound.currentTime = 0;
+  userNotificationSound.play().catch(e => console.error("Error al sonar usuario MP3:", e));
+
   if ("Notification" in window && Notification.permission === "granted") {
     new Notification("Nuevo mensaje TAXOTE", { body: message, icon: "favicon.svg" });
   }
 }
 
 document.addEventListener("pointerdown", () => {
+  // Desbloqueo de sonido MP3
+  userNotificationSound.play().then(() => {
+      userNotificationSound.pause();
+      userNotificationSound.currentTime = 0;
+  }).catch(() => {});
+
   if ("Notification" in window && Notification.permission === "default") Notification.requestPermission().catch(() => {});
 }, { once: true });
 

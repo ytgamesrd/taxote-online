@@ -23,8 +23,18 @@
       <a href="/history.html">◷ Historial de viajes</a>
       <a href="/drivers-chat.html">▤ Chat de conductores</a>
       <a class="active" href="/conversation-history.html">▧ Historial de conversación</a>
-      <a href="/user.html">◉ TAXOTE User</a>
+      <a href="/reports.html">▦ Reportes</a>
+      <hr style="border: 0; border-top: 1px solid rgba(255,255,255,.1); margin: 10px 0;">
+      <a href="#" onclick="adminLogout()" style="color:#f54b58">× Cerrar sesión</a>
     </nav>
+    <script>
+      function adminLogout() {
+        if(confirm("¿Seguro que deseas cerrar la sesión administrativa?")) {
+          document.cookie = "taxote_admin_session=; Path=/; Expires=Thu, 01 Jan 1970 00:00:01 GMT;";
+          location.href = "/admin-login.html";
+        }
+      }
+    </script>
     <p><b>Administrador</b><small>Operaciones TAXOTE</small></p>
   </aside>
 

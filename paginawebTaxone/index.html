@@ -45,9 +45,9 @@
         <a href="/history.html"><span>◷</span> Historial de viajes</a>
         <a href="/drivers-chat.html"><span>▤</span> Chat de conductores</a>
         <a href="/conversation-history.html"><span>▧</span> Historial de conversación</a>
-        <a href="/user.html"><span>◉</span> TAXOTE User</a>
-        <a href="#"><span>▦</span> Reportes</a>
-        <a href="#"><span>⚙</span> Configuración</a>
+        <a href="/reports.html"><span>▦</span> Reportes</a>
+        <hr style="border: 0; border-top: 1px solid #eee; margin: 10px 0;">
+        <a href="#" onclick="adminLogout()" style="color:#d32f2f"><span>×</span> Cerrar sesión</a>
       </nav>
       <div class="side-menu-footer"><p><b>Administrador</b><small>Operaciones TAXOTE</small></p></div>
     </aside>
@@ -155,16 +155,6 @@
               <select id="payment-method-select"><option>Efectivo</option><option>Tarjeta</option><option>Cuenta empresa</option></select>
             </label>
           </div>
-
-          <label class="check-label"><input type="checkbox" /> <span>Requiere servicio especial</span></label>
-          <label class="field select-field full-field">
-            <span>Servicio especial</span>
-            <select><option>No necesito un servicio especial</option><option>Silla para niño</option><option>Acceso para silla de ruedas</option></select>
-          </label>
-          <label class="field full-field">
-            <span>Observación para despacho</span>
-            <input type="text" placeholder="Añadir instrucción interna" />
-          </label>
 
           <div class="form-actions">
             <button id="clear-form" class="button button-light" type="reset">↺ Limpiar</button>

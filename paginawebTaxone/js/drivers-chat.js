@@ -6,41 +6,25 @@ let selectedDriverId = null;
 let currentMessagesFingerprint = "";
 let previousUnreadTotal = null;
 let notificationAudioContext = null;
-
-async function api(url, options = {}) {
-  const response = await fetch(url, { method: options.method || "GET", headers: { Accept: "application/json", "Content-Type": "application/json" }, body: options.body ? JSON.stringify(options.body) : undefined, cache: "no-store" });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.error || "No se pudo completar la operación.");
-  return data;
-}
-
-function toast(message) {
-  const element = $("#chat-toast");
-  element.textContent = message;
-  element.hidden = false;
-  clearTimeout(toast.timer);
-  toast.timer = setTimeout(() => { element.hidden = true; }, 2800);
-}
+const chatSound = new Audio('/mp3/clipmouse.mp3');
 
 function enableChatAlerts() {
-  if (!notificationAudioContext) notificationAudioContext = new (window.AudioContext || window.webkitAudioContext)();
-  if (notificationAudioContext.state === "suspended") notificationAudioContext.resume();
+  if (notificationAudioContext && notificationAudioContext.state === "suspended") {
+    notificationAudioContext.resume();
+  }
+  // Desbloqueo de sonido MP3
+  chatSound.play().then(() => {
+      chatSound.pause();
+      chatSound.currentTime = 0;
+  }).catch(() => { /* Bloqueo esperado */ });
+
   if ("Notification" in window && Notification.permission === "default") Notification.requestPermission().catch(() => {});
 }
 
 function playIncomingMessageAlert() {
-  if (notificationAudioContext?.state === "running") {
-    const oscillator = notificationAudioContext.createOscillator();
-    const gain = notificationAudioContext.createGain();
-    oscillator.type = "sine";
-    oscillator.frequency.setValueAtTime(880, notificationAudioContext.currentTime);
-    gain.gain.setValueAtTime(.0001, notificationAudioContext.currentTime);
-    gain.gain.exponentialRampToValueAtTime(.16, notificationAudioContext.currentTime + .04);
-    gain.gain.setValueAtTime(.16, notificationAudioContext.currentTime + 2.7);
-    gain.gain.exponentialRampToValueAtTime(.0001, notificationAudioContext.currentTime + 3);
-    oscillator.connect(gain).connect(notificationAudioContext.destination);
-    oscillator.start(); oscillator.stop(notificationAudioContext.currentTime + 3);
-  }
+  chatSound.currentTime = 0;
+  chatSound.play().catch(e => console.error("Error al sonar chat MP3:", e));
+
   if ("Notification" in window && Notification.permission === "granted") new Notification("Nuevo mensaje de conductor", { body: "Un conductor escribió a la Central." });
 }
 
@@ -101,7 +85,7 @@ async function selectPrivate(driverId) {
   $("#public-conversation").classList.remove("active");
   $("#current-avatar").textContent = initials(item.driver);
   $("#current-kicker").textContent = "CONVERSACIÓN PRIVADA";
-  $("#current-name").textContent = item.driver.name;
+  $("#current-name").textContent = "Conversar con " + item.driver.name;
   $("#current-status").textContent = `${item.driver.online ? "Conectado" : "Desconectado"} · ${item.driver.vehicleBrand} ${item.driver.vehicleModel}`;
   await api(`/api/admin/chats/${encodeURIComponent(driverId)}/read`, { method: "POST" }).catch(() => {});
   await loadConversations();

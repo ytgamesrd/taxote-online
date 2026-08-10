@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TAXOTE | Admin Login</title>
+    <style>
+        body { font-family: 'DM Sans', sans-serif; background: #0b2e47; display: grid; place-items: center; height: 100vh; margin: 0; color: #fff; }
+        .login-card { background: #fff; color: #0b2e47; padding: 40px; border-radius: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.3); width: 100%; max-width: 350px; text-align: center; }
+        h1 { margin-bottom: 30px; font-weight: 800; text-transform: uppercase; letter-spacing: 2px; }
+        input { width: 100%; padding: 12px; margin-bottom: 15px; border: 1px solid #ddd; border-radius: 8px; box-sizing: border-box; font-size: 16px; }
+        button { width: 100%; padding: 14px; background: #f4c400; border: 0; border-radius: 8px; color: #0b2e47; font-weight: 800; font-size: 16px; cursor: pointer; transition: 0.2s; }
+        button:hover { background: #e5b800; }
+        .error { color: #d32f2f; margin-top: 15px; font-size: 14px; font-weight: 600; display: none; }
+    </style>
+</head>
+<body>
+    <div class="login-card">
+        <h1>TAXOTE Admin</h1>
+        <form id="login-form">
+            <input type="text" id="username" placeholder="Usuario" required>
+            <input type="password" id="password" placeholder="Contraseña" required>
+            <button type="submit">ENTRAR</button>
+            <div id="error-msg" class="error"></div>
+        </form>
+    </div>
+    <script>
+        document.getElementById('login-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            const errorMsg = document.getElementById('error-msg');
+
+            try {
+                const response = await fetch('/api/admin/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password })
+                });
+                const data = await response.json();
+                if (response.ok) {
+                    location.href = '/';
+                } else {
+                    errorMsg.textContent = data.error || 'Error al iniciar sesión';
+                    errorMsg.style.display = 'block';
+                }
+            } catch (err) {
+                errorMsg.textContent = 'Error de conexión';
+                errorMsg.style.display = 'block';
+            }
+        });
+    </script>
+</body>
+</html>

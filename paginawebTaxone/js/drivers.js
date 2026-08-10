@@ -61,12 +61,57 @@ function renderDrivers(){
             <td><span class="plate-chip">${escapeHtml(driver.vehiclePlate)}</span></td>
             <td><span class="status-badge status-${driver.status}">${statusLabels[driver.status] || driver.status}</span></td>
             <td>${escapeHtml(dateLabel(driver.createdAt))}</td>
-            <td><button class="view-driver" type="button">Ver expediente</button></td>
+            <td style="display:flex;gap:5px;">
+                <button class="view-driver" type="button" onclick="event.stopPropagation(); openDriver('${escapeHtml(driver.id)}')">Ver</button>
+                <button class="view-driver" type="button" style="background:#0b2e47;color:#fff;" onclick="event.stopPropagation(); editDriver('${escapeHtml(driver.id)}')">Editar</button>
+            </td>
         </tr>
     `).join("");
 
     $$("#drivers-body tr").forEach(row => row.addEventListener("click", () => openDriver(row.dataset.driverId)));
 }
+
+async function editDriver(id) {
+    selectedDriverId = id;
+    try {
+        const { driver } = await fetchJson(`/api/admin/drivers/${encodeURIComponent(id)}`);
+        $("#edit-first-name").value = driver.firstName || "";
+        $("#edit-last-name").value = driver.lastName || "";
+        $("#edit-email").value = driver.email || "";
+        $("#edit-phone").value = driver.phone || "";
+        $("#edit-password").value = "";
+        setHidden("#driver-edit-modal", false);
+        document.body.style.overflow = "hidden";
+    } catch (error) { toast(error.message); }
+}
+
+$("#edit-driver-form")?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const body = {
+        firstName: $("#edit-first-name").value,
+        lastName: $("#edit-last-name").value,
+        email: $("#edit-email").value,
+        phone: $("#edit-phone").value
+    };
+    const password = $("#edit-password").value;
+    if (password) body.password = password;
+
+    try {
+        await fetchJson(`/api/admin/drivers/${encodeURIComponent(selectedDriverId)}`, {
+            method: "PATCH",
+            body
+        });
+        toast("Conductor actualizado.");
+        setHidden("#driver-edit-modal", true);
+        document.body.style.overflow = "";
+        loadDrivers();
+    } catch (error) { toast(error.message); }
+});
+
+$("#close-driver-edit")?.addEventListener("click", () => {
+    setHidden("#driver-edit-modal", true);
+    document.body.style.overflow = "";
+});
 
 function filteredDrivers(){
     const query = $("#driver-search")?.value.trim().toLocaleLowerCase("es") || "";

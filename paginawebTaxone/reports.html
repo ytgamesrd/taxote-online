@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#071f33" />
+    <title>Reportes | TAXOTE</title>
+    <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Outfit:wght@500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="css/styles.css" />
+    <link rel="stylesheet" href="css/history.css" />
+    <style>
+      .report-photo { max-width: 200px; max-height: 200px; border-radius: 8px; cursor: pointer; }
+      .status-new { background: #fff0bd; color: #805f0b; }
+      .status-resolved { background: #e3f5eb; color: #07613d; }
+    </style>
+  </head>
+  <body class="history-body">
+    <header class="topbar">
+      <button id="menu-button" class="menu-button" aria-label="Abrir menú" aria-expanded="false" aria-controls="side-menu"><span></span><span></span><span></span></button>
+      <a class="brand" href="/"><span class="brand-mark">T</span><span>TAXOTE</span></a>
+    </header>
+
+    <div id="drawer-overlay" class="drawer-overlay" hidden></div>
+    <aside id="side-menu" class="side-menu" aria-hidden="true">
+      <div class="side-menu-head"><a class="drawer-brand" href="/"><span class="brand-mark">T</span><span>TAXOTE</span></a><button id="close-menu" class="close-menu" aria-label="Cerrar menú">×</button></div>
+      <nav class="side-navigation" aria-label="Navegación principal">
+        <a href="/"><span>＋</span> Nueva reserva</a>
+        <a href="/drivers.html"><span>♙</span> Conductores</a>
+        <a href="/deposits.html"><span>💰</span> Depósitos</a>
+        <a href="/history.html"><span>◷</span> Historial de viajes</a>
+        <a href="/drivers-chat.html"><span>▤</span> Chat de conductores</a>
+        <a href="/conversation-history.html"><span>▧</span> Historial de conversación</a>
+        <a class="active" href="/reports.html"><span>▦</span> Reportes</a>
+        <hr style="border: 0; border-top: 1px solid #eee; margin: 10px 0;">
+        <a href="#" onclick="adminLogout()" style="color:#d32f2f"><span>×</span> Cerrar sesión</a>
+      </nav>
+    </aside>
+
+    <main class="history-page">
+      <header class="history-titlebar">
+        <div><span class="history-kicker">INCIDENCIAS</span><h1>Reportes de Usuarios y Conductores</h1></div>
+        <button id="refresh-reports" type="button" class="history-refresh">↻ Actualizar</button>
+      </header>
+
+      <section class="history-card">
+        <div class="history-table-wrap">
+          <table>
+            <thead>
+              <tr class="history-column-headings">
+                <th>ID</th><th>Fecha</th><th>Informante</th><th>Tipo</th><th>Viaje</th><th>Categoría</th><th>Descripción</th><th>Foto</th><th>Estado</th><th>Acciones</th>
+              </tr>
+            </thead>
+            <tbody id="reports-body">
+              <tr><td colspan="10" class="history-empty">Cargando reportes…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+
+    <script>
+      const $ = (s) => document.querySelector(s);
+      async function fetchReports() {
+        try {
+          const res = await fetch('/api/admin/reports');
+          const data = await res.json();
+          renderReports(data);
+        } catch (e) { console.error(e); }
+      }
+      function renderReports(reports) {
+        const body = $('#reports-body');
+        if (!reports.length) {
+          body.innerHTML = '<tr><td colspan="10" class="history-empty">No hay reportes registrados.</td></tr>';
+          return;
+        }
+        body.innerHTML = reports.map(r => `
+          <tr>
+            <td>${r.public_id}</td>
+            <td>${new Date(r.created_at).toLocaleString()}</td>
+            <td>${r.reporter_name}<br><small>${r.reporter_id}</small></td>
+            <td>${r.reporter_type === 'driver' ? 'Conductor' : 'Pasajero'}</td>
+            <td>${r.ride_id || '—'}</td>
+            <td><b>${r.category}</b></td>
+            <td>${r.description}</td>
+            <td>${r.photo_data ? `<img src="${r.photo_data}" class="report-photo" onclick="window.open(this.src)">` : '—'}</td>
+            <td><span class="status-chip status-${r.status}">${r.status === 'new' ? 'Nuevo' : 'Resuelto'}</span></td>
+            <td>
+              ${r.status === 'new' ? `<button onclick="resolveReport('${r.public_id}')" style="padding:4px 8px;background:#0b2e47;color:#fff;border:0;border-radius:4px;cursor:pointer;">Resolver</button>` : '—'}
+            </td>
+          </tr>
+        `).join('');
+      }
+      async function resolveReport(id) {
+        if(!confirm('¿Marcar como resuelto?')) return;
+        await fetch('/api/admin/reports/' + encodeURIComponent(id), {
+          method: 'PATCH',
+          body: JSON.stringify({ status: 'resolved' })
+        });
+        fetchReports();
+      }
+      function adminLogout() {
+        if(confirm("¿Seguro que deseas cerrar la sesión administrativa?")) {
+          document.cookie = "taxote_admin_session=; Path=/; Expires=Thu, 01 Jan 1970 00:00:01 GMT;";
+          location.href = "/admin-login.html";
+        }
+      }
+      $('#refresh-reports').onclick = fetchReports;
+      fetchReports();
+
+      // Menu logic
+      $("#menu-button").onclick = () => {
+        $("#side-menu").classList.toggle("open");
+        $("#drawer-overlay").hidden = !$("#side-menu").classList.contains("open");
+      };
+      $("#drawer-overlay").onclick = () => {
+        $("#side-menu").classList.remove("open");
+        $("#drawer-overlay").hidden = true;
+      };
+    </script>
+  </body>
+</html>
