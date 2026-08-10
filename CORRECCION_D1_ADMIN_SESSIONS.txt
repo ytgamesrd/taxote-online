@@ -1,0 +1,12 @@
+TAXOTE - Corrección D1 admin_sessions
+
+Este paquete corrige el error:
+D1_ERROR: NOT NULL constraint failed: admin_sessions.username
+
+La tabla existente en D1 tiene:
+- token_hash TEXT PRIMARY KEY
+- username TEXT NOT NULL
+- expires_at TEXT NOT NULL
+- created_at TEXT NOT NULL
+
+El Worker ahora inserta las cuatro columnas y NO borra ni recrea la base de datos.
