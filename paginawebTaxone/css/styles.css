@@ -623,3 +623,44 @@ body.panel-resize-active, body.panel-resize-active * { cursor: ew-resize !import
   display:none !important;
   content:none !important;
 }
+
+
+/* TAXOTE V2.3: agarradores EXACTAMENTE del lado del mapa */
+.booking-resize-handle{
+  left:auto !important;
+  right:-16px !important;      /* queda dentro del borde izquierdo del mapa */
+  width:16px !important;
+}
+.drivers-resize-handle{
+  left:-16px !important;       /* queda dentro del borde derecho del mapa */
+  right:auto !important;
+  width:16px !important;
+}
+
+/* línea visible pegada al borde del mapa; toda el área de 16px se puede arrastrar */
+.booking-resize-handle::before{
+  left:0 !important;
+  right:auto !important;
+}
+.drivers-resize-handle::before{
+  left:auto !important;
+  right:0 !important;
+}
+.panel-resize-handle::before{
+  top:0 !important;
+  bottom:0 !important;
+  width:3px !important;
+  height:auto !important;
+  transform:none !important;
+  background:#c7d2d9 !important;
+  opacity:.75 !important;
+}
+.panel-resize-handle:hover::before,
+.panel-resize-handle.active::before{
+  background:#f4c400 !important;
+  opacity:1 !important;
+}
+.panel-resize-handle::after{
+  display:none !important;
+  content:none !important;
+}
