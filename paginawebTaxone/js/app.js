@@ -13,9 +13,9 @@ const customerInput=$("#customer"), customerResults=$("#customer-results"), sele
 const guestFields=$("#guest-fields");
 const driverAssignInput=$("#driver-assign-id");
 let toastTimer, selectedCustomer=null, selectedDriverId="", activeMapSelection="pickup";
-let map, routeLayer, markerLayer, driverLocationLayer;
+let map, routeLayer, markerLayer, driverLocationLayer, baseTileLayer, darkTileLayer, mapEngine="leaflet", googleTrafficLayer=null, googleRoutePolyline=null, googleSelectionMarkers=[], googleDriverMarkers=[];
 let dispatchTrips=[], connectedDrivers=[], routeStops=[], tripFilter='active';
-let routeRequestId=0, previousNotificationIds=new Set(), notificationInitialized=false, previousChatUnread=0;
+let routeRequestId=0, previousNotificationIds=new Set(), notificationInitialized=false, previousChatUnread=0, detailTripId="", etaTimer=null;
 
 const selectedLocations={pickup:null,destination:null};
 const defaultCenter=[18.49,-69.98], defaultZoom=11;
@@ -109,12 +109,15 @@ function markerIcon(kind,num=0){
   const label=kind==="stop"?`C${num}`:kind==="destination"?"B":"A";
   return L.divIcon({className:"taxote-div-icon",html:`<div class="taxote-marker-shell"><div class="taxote-marker ${kind}"><span>${label}</span></div><button class="marker-remove" type="button" title="Quitar ${label}">×</button></div>`,iconSize:[30,30],iconAnchor:[15,30]});
 }
-function initializeMap(){
-  if(!window.L)return;
-  map=L.map("live-map",{zoomControl:true}).setView(defaultCenter,defaultZoom);
-  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:19}).addTo(map);
-  routeLayer=L.layerGroup().addTo(map);markerLayer=L.layerGroup().addTo(map);driverLocationLayer=L.layerGroup().addTo(map);
-  map.on("click",e=>setPointFromMap(activeMapSelection,e.latlng));
+async function initializeMap(){
+  const cfg=await fetchJson("/api/maps-config").catch(()=>({}));
+  if(cfg.googleMapsApiKey){
+    try{
+      if(!window.google?.maps)await new Promise((resolve,reject)=>{const s=document.createElement("script");s.async=true;s.defer=true;s.src=`https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(cfg.googleMapsApiKey)}&libraries=places&language=es&region=DO&v=weekly`;s.onload=resolve;s.onerror=reject;document.head.appendChild(s);});
+      mapEngine="google";map=new google.maps.Map(document.getElementById("live-map"),{center:{lat:defaultCenter[0],lng:defaultCenter[1]},zoom:defaultZoom,mapTypeId:"roadmap",streetViewControl:false,mapTypeControl:false,fullscreenControl:false,gestureHandling:"greedy"});map.addListener("click",e=>setPointFromMap(activeMapSelection,{lat:e.latLng.lat(),lng:e.latLng.lng()}));return;
+    }catch(e){console.warn("Google Maps no disponible; usando fallback.",e);}
+  }
+  mapEngine="leaflet";map=L.map("live-map",{zoomControl:true}).setView(defaultCenter,defaultZoom);baseTileLayer=L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:19,attribution:"© OpenStreetMap contributors"}).addTo(map);darkTileLayer=L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",{maxZoom:20,attribution:"© OpenStreetMap © CARTO"});routeLayer=L.layerGroup().addTo(map);markerLayer=L.layerGroup().addTo(map);driverLocationLayer=L.layerGroup().addTo(map);map.on("click",e=>setPointFromMap(activeMapSelection,e.latlng));
 }
 async function reverseAt(lat,lon){
   try{const r=await fetchJson(`/api/reverse?lat=${lat}&lon=${lon}`);return{address:r.display_name||`${lat.toFixed(6)}, ${lon.toFixed(6)}`,lat:Number(lat),lon:Number(lon)};}
@@ -139,35 +142,18 @@ function removePoint(kind){
   else{const s=getStop(kind);if(s){s.location=null;s.input.value="";setMapSelection(kind);}}
   renderSelectionMarkers();calculateRoadRoute();
 }
-function addMarker(kind,loc,iconKind,num=0){
-  if(!loc)return;
-  const m=L.marker([loc.lat,loc.lon],{icon:markerIcon(iconKind,num),draggable:true}).addTo(markerLayer);
-  m.on("dragend",e=>setPointFromMap(kind,e.target.getLatLng()));
-  m.on("click",()=>setMapSelection(kind));
-  setTimeout(()=>m.getElement()?.querySelector(".marker-remove")?.addEventListener("click",e=>{e.stopPropagation();removePoint(kind);}),0);
-}
-function renderSelectionMarkers(){
-  if(!markerLayer)return;markerLayer.clearLayers();
-  addMarker("pickup",selectedLocations.pickup,"pickup");
-  routeStops.forEach((s,i)=>addMarker(s.id,s.location,"stop",i+1));
-  addMarker("destination",selectedLocations.destination,"destination");
-}
+function markerLabel(iconKind,num=0){return iconKind==="pickup"?"A":iconKind==="destination"?"B":`C${num}`;}
+function clearSelectionMarkers(){if(mapEngine==="google"){googleSelectionMarkers.forEach(m=>m.setMap(null));googleSelectionMarkers=[];}else markerLayer?.clearLayers();}
+function addMarker(kind,loc,iconKind,num=0){if(!loc)return;if(mapEngine==="google"){const label=markerLabel(iconKind,num),m=new google.maps.Marker({position:{lat:Number(loc.lat),lng:Number(loc.lon)},map,draggable:!String(kind).startsWith("detail-"),label:{text:label,color:"#fff",fontWeight:"700"},title:`Punto ${label}`});if(!String(kind).startsWith("detail-")){m.addListener("dragend",e=>setPointFromMap(kind,{lat:e.latLng.lat(),lng:e.latLng.lng()}));m.addListener("click",()=>setMapSelection(kind));}googleSelectionMarkers.push(m);}else{const m=L.marker([loc.lat,loc.lon],{icon:markerIcon(iconKind,num),draggable:!String(kind).startsWith("detail-")}).addTo(markerLayer);if(!String(kind).startsWith("detail-")){m.on("dragend",e=>setPointFromMap(kind,e.target.getLatLng()));m.on("click",()=>setMapSelection(kind));setTimeout(()=>m.getElement()?.querySelector(".marker-remove")?.addEventListener("click",e=>{e.stopPropagation();removePoint(kind);}),0);}}}
+function renderSelectionMarkers(){clearSelectionMarkers();addMarker("pickup",selectedLocations.pickup,"pickup");routeStops.forEach((s,i)=>addMarker(s.id,s.location,"stop",i+1));addMarker("destination",selectedLocations.destination,"destination");}
 function routePoints(){return [selectedLocations.pickup,...routeStops.map(s=>s.location).filter(Boolean),selectedLocations.destination].filter(Boolean);}
-async function calculateRoadRoute(){
-  const pts=routePoints();routeLayer?.clearLayers();
-  if(pts.length<2){routeNotice.textContent="Selecciona origen y destino para ver la ruta.";return;}
-  const req=++routeRequestId,coords=pts.map(p=>`${p.lon},${p.lat}`).join(";");
-  try{
-    const data=await fetchJson(`/api/route?coordinates=${encodeURIComponent(coords)}`);if(req!==routeRequestId)return;
-    if(data.routes?.[0]){const r=data.routes[0];L.polyline(r.geometry.coordinates.map(([lon,lat])=>[lat,lon]),{color:"#0b2e47",weight:5}).addTo(routeLayer);routeNotice.textContent=`Ruta lista: ${(r.distance/1000).toFixed(1)} km · ${Math.ceil(r.duration/60)} min`;}
-  }catch(e){routeNotice.textContent="No se pudo calcular la ruta ahora.";}
-}
-function fitCurrentRoute(){
-  const pts=routePoints();
-  if(pts.length){map.fitBounds(L.latLngBounds(pts.map(p=>[p.lat,p.lon])),{padding:[55,55],maxZoom:14});}
-  else map.setView(defaultCenter,defaultZoom);
-}
-$("#recenter")?.addEventListener("click",fitCurrentRoute);
+function clearRouteVisual(){if(mapEngine==="google"){if(googleRoutePolyline){googleRoutePolyline.setMap(null);googleRoutePolyline=null;}}else routeLayer?.clearLayers();}
+function drawPolyline(coords,color="#0b2e47"){clearRouteVisual();if(mapEngine==="google"){googleRoutePolyline=new google.maps.Polyline({path:coords.map(([lon,lat])=>({lat,lng:lon})),strokeColor:color,strokeOpacity:1,strokeWeight:5,map});}else L.polyline(coords.map(([lon,lat])=>[lat,lon]),{color,weight:5}).addTo(routeLayer);}
+async function drawRouteForPoints(pts,notice=true){clearRouteVisual();if(pts.length<2){if(notice)routeNotice.textContent="Selecciona origen y destino para ver la ruta.";return;}const req=++routeRequestId,coords=pts.map(p=>`${p.lon},${p.lat}`).join(";");try{const data=await fetchJson(`/api/route?coordinates=${encodeURIComponent(coords)}`);if(req!==routeRequestId)return;if(data.routes?.[0]){const r=data.routes[0];drawPolyline(r.geometry.coordinates);if(notice)routeNotice.textContent=`Ruta lista: ${(r.distance/1000).toFixed(1)} km · ${Math.ceil(r.duration/60)} min`;}}catch(e){if(notice)routeNotice.textContent="No se pudo calcular la ruta ahora.";}}
+async function calculateRoadRoute(){return drawRouteForPoints(routePoints(),true);}
+function fitPoints(pts){if(!pts.length){if(mapEngine==="google"){map.setCenter({lat:defaultCenter[0],lng:defaultCenter[1]});map.setZoom(defaultZoom);}else map.setView(defaultCenter,defaultZoom);return;}if(mapEngine==="google"){const b=new google.maps.LatLngBounds();pts.forEach(p=>b.extend({lat:Number(p.lat),lng:Number(p.lon)}));map.fitBounds(b,55);}else map.fitBounds(L.latLngBounds(pts.map(p=>[p.lat,p.lon])),{padding:[55,55],maxZoom:14});}
+function fitCurrentRoute(){fitPoints(routePoints());}
+$("#recenter")?.addEventListener("click",()=>detailTripId?showTripOnMap(detailTripId,true):fitCurrentRoute());
 $("#pick-pickup-map")?.addEventListener("click",()=>{setMapSelection("pickup");showToast("Haz clic donde quieras colocar A.");});
 $("#pick-destination-map")?.addEventListener("click",()=>{setMapSelection("destination");showToast("Haz clic donde quieras colocar B.");});
 $("#clear-pickup")?.addEventListener("click",()=>removePoint("pickup"));
@@ -254,54 +240,47 @@ function renderAssignSearch(){
 async function loadConnectedDrivers(){
   try{connectedDrivers=await fetchJson("/api/admin/driver-locations");renderConnectedDrivers();renderDriverLocations();renderAssignSearch();}catch{}
 }
-function renderDriverLocations(){
-  driverLocationLayer?.clearLayers();
-  connectedDrivers.forEach(d=>{if(!d.location)return;L.marker([d.location.lat,d.location.lon],{icon:L.divIcon({className:"taxote-car-marker",html:`<img src="/assets/taxote-car.png" style="width:32px;height:35px;transform:rotate(${Number(d.location.bearing||0)}deg)">`})}).addTo(driverLocationLayer).bindPopup(`<b>${escapeHtml(d.name)}</b><br>${escapeHtml(d.vehiclePlate||"")}`);});
-}
+function renderDriverLocations(){if(mapEngine==="google"){googleDriverMarkers.forEach(m=>m.setMap(null));googleDriverMarkers=[];connectedDrivers.forEach(d=>{if(!d.location)return;const m=new google.maps.Marker({position:{lat:Number(d.location.lat),lng:Number(d.location.lon)},map,title:d.name,icon:{url:"/assets/taxote-car.png",scaledSize:new google.maps.Size(28,32)}});m.addListener("click",()=>locateConnectedDriver(d.id));googleDriverMarkers.push(m);});}else{driverLocationLayer?.clearLayers();connectedDrivers.forEach(d=>{if(!d.location)return;L.marker([d.location.lat,d.location.lon],{icon:L.divIcon({className:"taxote-car-marker",html:`<img src="/assets/taxote-car.png" style="width:32px;height:35px;transform:rotate(${Number(d.location.bearing||0)}deg)">`})}).addTo(driverLocationLayer).bindPopup(`<b>${escapeHtml(d.name)}</b><br>${escapeHtml(d.vehiclePlate||"")}`);});}}
 $("#connected-driver-search")?.addEventListener("input",renderConnectedDrivers);
 let quickChatDriverId="";
-function locateConnectedDriver(id){const d=connectedDrivers.find(x=>x.id===id);if(!d?.location)return showToast("Ese conductor todavía no reporta ubicación.");selectedDriverId=id;updateAssignedDriverSummary();renderConnectedDrivers();map?.setView([Number(d.location.lat),Number(d.location.lon)],16,{animate:true});showToast(`${d.name} seleccionado y ubicado.`);}
+function locateConnectedDriver(id){const d=connectedDrivers.find(x=>x.id===id);if(!d?.location)return showToast("Ese conductor todavía no reporta ubicación.");selectedDriverId=id;updateAssignedDriverSummary();renderConnectedDrivers();if(mapEngine==="google"){map.panTo({lat:Number(d.location.lat),lng:Number(d.location.lon)});map.setZoom(16);}else map?.setView([Number(d.location.lat),Number(d.location.lon)],16,{animate:true});showToast(`${d.name} seleccionado y ubicado.`);}
 async function openDriverQuickChat(id){const d=connectedDrivers.find(x=>x.id===id);quickChatDriverId=id;$("#driver-chat-name").textContent=d?.name||"Conductor";$("#driver-chat-modal").hidden=false;try{const data=await fetchJson(`/api/admin/chats/${encodeURIComponent(id)}/messages`);$("#driver-chat-history").innerHTML=(data.messages||[]).slice(-20).map(m=>`<div class="quick-msg ${m.sender==="admin"?"mine":""}"><b>${m.sender==="admin"?"Central":escapeHtml(d?.name||"Driver")}</b><p>${escapeHtml(m.message||"")}</p></div>`).join("")||"<p>Sin mensajes todavía.</p>";}catch(e){showToast(e.message);}}
 $("#driver-quick-chat-form")?.addEventListener("submit",async e=>{e.preventDefault();const input=$("#driver-quick-chat-input"),message=input.value.trim();if(!message||!quickChatDriverId)return;try{await fetchJson(`/api/admin/chats/${encodeURIComponent(quickChatDriverId)}/messages`,{method:"POST",body:{message}});input.value="";$("#driver-chat-modal").hidden=true;showToast("Mensaje enviado");}catch(err){showToast(err.message);}});
-$$("[data-close-modal]").forEach(b=>b.addEventListener("click",()=>{$(`#${b.dataset.closeModal}`).hidden=true;}));
+$$("[data-close-modal]").forEach(b=>b.addEventListener("click",()=>{$(`#${b.dataset.closeModal}`).hidden=true;if(b.dataset.closeModal==="eta-modal"){clearInterval(etaTimer);etaTimer=null;}}));
 $("#driver-assign-search")?.addEventListener("input",renderAssignSearch);
 
 /* viajes */
-const statusLabels={pending:"Pendiente",accepted:"Aceptado",driver_arriving:"En camino",arrived:"Llegó",in_progress:"En viaje",completed:"Terminado",cancelled:"Cancelado"};
-function tripRow(t){return `<tr><td><button class="eye-btn" data-eye="${escapeHtml(t.id)}" title="Ver detalles">👁</button></td><td>${escapeHtml(t.id)}</td><td><span class="status-chip status-${escapeHtml(t.status)}">${escapeHtml(statusLabels[t.status]||t.status)}</span></td><td>${escapeHtml(t.passenger)}</td><td>${escapeHtml(t.phone)}</td><td>${escapeHtml(t.driver)}</td><td>${t.contactedAt?"✓":"—"}</td><td>${escapeHtml(t.pickup)}</td><td>${escapeHtml(t.destination)}</td><td>${new Date(t.createdAt).toLocaleTimeString("es-DO",{hour:"2-digit",minute:"2-digit"})}</td></tr>`;}
+const statusLabels={pending:"NUEVO",accepted:"Aceptado",driver_arriving:"En camino",arrived:"Llegó",in_progress:"En viaje",completed:"Terminado",cancelled:"Cancelado"};
+function tripRow(t){const canCancel=!["completed","cancelled"].includes(t.status),canArrive=["accepted","driver_arriving"].includes(t.status),hasDriver=!!t.driverId;return `<tr><td class="trip-actions-cell">${canCancel?`<button class="trip-cancel-btn" data-cancel-trip="${escapeHtml(t.id)}" title="Cancelar">×</button>`:""}<button class="eye-btn" data-eye="${escapeHtml(t.id)}" title="Ver detalles">👁</button>${hasDriver?`<button class="trip-eta-btn" data-eta-trip="${escapeHtml(t.id)}" title="Tiempo de llegada">⏱</button>`:""}${canArrive?`<button class="trip-arrived-btn" data-arrived-trip="${escapeHtml(t.id)}" title="Marcar llegó">✓ Llegó</button>`:""}</td><td>${escapeHtml(t.id)}</td><td><span class="status-chip status-${escapeHtml(t.status)}">${escapeHtml(statusLabels[t.status]||t.status)}</span></td><td>${escapeHtml(t.passenger)}</td><td>${escapeHtml(t.phone)}</td><td>${escapeHtml(t.driver)}</td><td>${t.contactedAt?"✓":"—"}</td><td>${escapeHtml(t.pickup)}</td><td>${escapeHtml(t.destination)}</td><td>${new Date(t.createdAt).toLocaleTimeString("es-DO",{hour:"2-digit",minute:"2-digit"})}</td></tr>`;}
 function renderTrips(){
   const q=($("#trip-search")?.value||"").trim().toLowerCase(),counts={};dispatchTrips.forEach(t=>{if(t.driverId)counts[t.driverId]=(counts[t.driverId]||0)+1;});const now=Date.now();
   const rows=dispatchTrips.filter(t=>{const scheduled=t.scheduledAt&&new Date(t.scheduledAt).getTime()>now;const doubleRide=t.driverId&&counts[t.driverId]>1;const f=tripFilter==="scheduled"?scheduled:tripFilter==="double"?doubleRide:!scheduled;return f&&(!q||JSON.stringify(t).toLowerCase().includes(q));});
   $("#trip-table-body").innerHTML=rows.length?rows.map(tripRow).join(""):'<tr><td colspan="10" style="text-align:center;padding:22px;color:#81919a;">No hay servicios activos.</td></tr>';
   $("#current-trip-count").textContent=dispatchTrips.length;
   $("#trip-table-body").querySelectorAll("[data-eye]").forEach(b=>b.addEventListener("click",()=>viewTripDetails(b.dataset.eye)));
+  $("#trip-table-body").querySelectorAll("[data-cancel-trip]").forEach(b=>b.addEventListener("click",()=>openCancelRide(b.dataset.cancelTrip)));
+  $("#trip-table-body").querySelectorAll("[data-eta-trip]").forEach(b=>b.addEventListener("click",()=>openEta(b.dataset.etaTrip)));
+  $("#trip-table-body").querySelectorAll("[data-arrived-trip]").forEach(b=>b.addEventListener("click",()=>markArrived(b.dataset.arrivedTrip)));
 }
 async function loadDispatchTrips(){try{dispatchTrips=await fetchJson("/api/dispatch/rides");renderTrips();}catch{}}
-function viewTripDetails(id){
-  const t=dispatchTrips.find(x=>x.id===id);if(!t)return;
-  $("#trip-details-panel").style.display="flex";$("#booking-form-content").style.display="none";$("#details-trip-id").textContent=t.id;
-  $("#trip-details-content").innerHTML=`<div class="trip-detail-grid">
-    <div><b>Fecha del viaje</b><span>${escapeHtml(fmtDate(t.createdAt))}</span></div>
-    <div><b>Estado</b><span>${escapeHtml(statusLabels[t.status]||t.status)}</span></div>
-    <div><b>Nombre del pasajero</b><span>${escapeHtml(t.passenger)}</span></div>
-    <div><b>Teléfono</b><span>${escapeHtml(t.phone)}</span></div>
-    <div><b>Conductor</b><span>${escapeHtml(t.driver)}</span></div>
-    <div><b>Vehículo</b><span>${escapeHtml(t.driverVehicle||"—")} ${escapeHtml(t.driverPlate||"")}</span></div>
-    <div><b>Recogida</b><span>${escapeHtml(t.pickup)}</span></div>
-    <div><b>Destino</b><span>${escapeHtml(t.destination)}</span></div>
-    <div><b>Precio</b><span>${fmtPrice(t.priceDop)}</span></div>
-    <div><b>Distancia</b><span>${Number(t.distanceKm||0).toFixed(1)} km</span></div>
-    <div><b>Duración</b><span>${Number(t.durationMin||0)} min</span></div>
-    <div><b>Pago</b><span>${escapeHtml(t.paymentMethod||"—")}</span></div>
-    <div><b>Nota</b><span>${escapeHtml(t.note||"Sin nota")}</span></div>
-  </div>`;
-  if(Number.isFinite(t.pickupLat)&&Number.isFinite(t.destinationLat))map.fitBounds([[t.pickupLat,t.pickupLon],[t.destinationLat,t.destinationLon]],{padding:[55,55]});
-}
+async function showTripOnMap(id,fit=true){const t=dispatchTrips.find(x=>x.id===id);if(!t)return;clearSelectionMarkers();const pts=[{address:t.pickup,lat:Number(t.pickupLat),lon:Number(t.pickupLon)},...(t.stops||[]).map(s=>({address:s.address,lat:Number(s.lat),lon:Number(s.lon)})),{address:t.destination,lat:Number(t.destinationLat),lon:Number(t.destinationLon)}].filter(p=>Number.isFinite(p.lat)&&Number.isFinite(p.lon));if(pts[0])addMarker("detail-a",pts[0],"pickup");(t.stops||[]).forEach((s,i)=>addMarker(`detail-c-${i}`,{lat:Number(s.lat),lon:Number(s.lon)},"stop",i+1));if(pts.length>1)addMarker("detail-b",pts[pts.length-1],"destination");await drawRouteForPoints(pts,false);if(fit)fitPoints(pts);}
+function viewTripDetails(id){const t=dispatchTrips.find(x=>x.id===id);if(!t)return;detailTripId=id;$("#trip-details-panel").style.display="flex";$("#booking-form-content").style.display="none";$("#details-trip-id").textContent=t.id;$("#trip-details-content").innerHTML=`<div class="trip-detail-grid compact"><div><b>Fecha</b><span>${escapeHtml(fmtDate(t.createdAt))}</span></div><div><b>Estado</b><span>${escapeHtml(statusLabels[t.status]||t.status)}</span></div><div><b>Pasajero</b><span>${escapeHtml(t.passenger)}</span></div><div><b>Teléfono</b><span>${escapeHtml(t.phone)}</span></div><div><b>Conductor</b><span>${escapeHtml(t.driver)}</span></div><div><b>Vehículo</b><span>${escapeHtml(t.driverVehicle||"—")} ${escapeHtml(t.driverPlate||"")}</span></div><div><b>Recogida A</b><span>${escapeHtml(t.pickup)}</span></div><div><b>Destino B</b><span>${escapeHtml(t.destination)}</span></div>${(t.stops||[]).map((s,i)=>`<div><b>Parada C${i+1}</b><span>${escapeHtml(s.address)}</span></div>`).join("")}<div><b>Precio</b><span>${fmtPrice(t.priceDop)}</span></div><div><b>Distancia</b><span>${Number(t.distanceKm||0).toFixed(1)} km</span></div><div><b>Duración</b><span>${Number(t.durationMin||0)} min</span></div><div><b>Pago</b><span>${escapeHtml(t.paymentMethod||"—")}</span></div><div><b>Nota</b><span>${escapeHtml(t.note||"Sin nota")}</span></div></div><div class="detail-actions">${!["completed","cancelled"].includes(t.status)?`<button class="button button-danger" onclick="openCancelRide('${escapeHtml(t.id)}')">× Cancelar</button>`:""}${t.driverId?`<button class="button button-light" onclick="openEta('${escapeHtml(t.id)}')">⏱ Tiempo</button>`:""}${["accepted","driver_arriving"].includes(t.status)?`<button class="button button-primary" onclick="markArrived('${escapeHtml(t.id)}')">✓ Llegó</button>`:""}</div>`;showTripOnMap(id,true);}
 window.viewTripDetails=viewTripDetails;
-$("#close-trip-details")?.addEventListener("click",()=>{$("#trip-details-panel").style.display="none";$("#booking-form-content").style.display="block";renderSelectionMarkers();calculateRoadRoute();});
+$("#close-trip-details")?.addEventListener("click",()=>{detailTripId="";$("#trip-details-panel").style.display="none";$("#booking-form-content").style.display="block";renderSelectionMarkers();calculateRoadRoute();});
 $("#trip-search")?.addEventListener("input",renderTrips);
 $("#refresh-trips")?.addEventListener("click",loadDispatchTrips);
 $$("[data-trip-filter]").forEach(b=>b.addEventListener("click",()=>{tripFilter=b.dataset.tripFilter;$$("[data-trip-filter]").forEach(x=>x.classList.toggle("active",x===b));renderTrips();}));
+
+/* cancelar / llegó / ETA */
+const CANCEL_REASONS={dispatcher:["Error del Dispatcher","Viaje duplicado","Cancelar y enviar de nuevo","El pasajero pidió cancelar","No hay conductores aceptando el viaje","Otro"],driver:["Problema del vehículo","Emergencia del conductor","No puede llegar a la recogida","El pasajero pidió cancelar","Otro"],passenger:["Cambió de planes","No necesita el servicio","Problema con la recogida","Emergencia del pasajero","Otro"]};
+let cancelRideId="",cancelActor="dispatcher";
+function renderCancelReasons(){const box=$("#cancel-reasons");if(!box)return;box.innerHTML=(CANCEL_REASONS[cancelActor]||[]).map((r,i)=>`<label><input type="radio" name="cancel-reason" value="${escapeHtml(r)}" ${i===0?"checked":""}> ${escapeHtml(r)}</label>`).join("");}
+function openCancelRide(id){cancelRideId=id;cancelActor="dispatcher";$$("[data-cancel-actor]").forEach(b=>b.classList.toggle("active",b.dataset.cancelActor==="dispatcher"));renderCancelReasons();$("#cancel-note").value="";$("#cancel-ride-title").textContent=`Cancelar ${id}`;$("#cancel-ride-modal").hidden=false;}window.openCancelRide=openCancelRide;
+$$("[data-cancel-actor]").forEach(b=>b.addEventListener("click",()=>{cancelActor=b.dataset.cancelActor;$$("[data-cancel-actor]").forEach(x=>x.classList.toggle("active",x===b));renderCancelReasons();}));
+$("#confirm-cancel-ride")?.addEventListener("click",async()=>{const reason=$('input[name="cancel-reason"]:checked')?.value;if(!cancelRideId||!reason)return;try{await fetchJson(`/api/dispatch/rides/${encodeURIComponent(cancelRideId)}/cancel`,{method:"POST",body:{actor:cancelActor,reason,note:$("#cancel-note").value}});$("#cancel-ride-modal").hidden=true;showToast("Servicio cancelado.");detailTripId="";$("#trip-details-panel").style.display="none";$("#booking-form-content").style.display="block";await loadDispatchTrips();renderSelectionMarkers();calculateRoadRoute();}catch(e){showToast(e.message);}});
+async function markArrived(id){try{await fetchJson(`/api/dispatch/rides/${encodeURIComponent(id)}/status`,{method:"POST",body:{action:"arrived"}});showToast("Conductor marcado como: Llegó.");await loadDispatchTrips();if(detailTripId===id)viewTripDetails(id);}catch(e){showToast(e.message);}}window.markArrived=markArrived;
+async function refreshEta(id){const t=dispatchTrips.find(x=>x.id===id),d=connectedDrivers.find(x=>x.id===t?.driverId);if(!t||!d?.location){$("#eta-live").textContent="Ubicación del conductor no disponible";return;}try{const coords=`${Number(d.location.lon)},${Number(d.location.lat)};${Number(t.pickupLon)},${Number(t.pickupLat)}`,data=await fetchJson(`/api/route?coordinates=${encodeURIComponent(coords)}`),r=data.routes?.[0];if(!r)throw new Error();$("#eta-live").textContent=`Llega en ${Math.max(1,Math.ceil(r.duration/60))} min`;$("#eta-updated").textContent=`Actualizado ${new Date().toLocaleTimeString("es-DO")}`;}catch{$("#eta-live").textContent="No se pudo calcular ahora.";}}
+function openEta(id){clearInterval(etaTimer);const t=dispatchTrips.find(x=>x.id===id);$("#eta-driver-name").textContent=t?.driver||"Conductor";$("#eta-modal").hidden=false;refreshEta(id);etaTimer=setInterval(()=>refreshEta(id),5000);}window.openEta=openEta;
 
 /* crear reserva */
 function scheduledValue(){
@@ -366,7 +345,10 @@ $("#btn-whatsapp-toggle")?.addEventListener("click",()=>toggleChat("whatsapp"));
 $("#send-internal-chat")?.addEventListener("click",async()=>{const input=$("#internal-chat-input"),message=input.value.trim();if(!message||!floatingChatDriverId)return showToast("Selecciona un conductor.");try{await fetchJson(`/api/admin/chats/${encodeURIComponent(floatingChatDriverId)}/messages`,{method:"POST",body:{message}});input.value="";await renderFloatingPrivateChats();showToast("Mensaje enviado");}catch(e){showToast(e.message);}});
 
 let trafficLayer=null;
-async function setupTraffic(){const toggle=$("#traffic-toggle"),status=$("#traffic-status");if(!toggle)return;try{const s=await fetchJson("/api/maps-status");status.textContent=s.trafficAvailable?`Tráfico en tiempo real${s.provider?` · ${s.provider}`:""}`:"Tráfico: proveedor no configurado";toggle.disabled=!s.trafficAvailable;toggle.addEventListener("change",()=>{if(toggle.checked){trafficLayer=L.tileLayer("/api/traffic/{z}/{x}/{y}",{opacity:.72,maxZoom:19}).addTo(map);}else if(trafficLayer){map.removeLayer(trafficLayer);trafficLayer=null;}});}catch{status.textContent="Tráfico no disponible";toggle.disabled=true;}}
+const GOOGLE_DARK_STYLES=[{elementType:"geometry",stylers:[{color:"#1d2c4d"}]},{elementType:"labels.text.fill",stylers:[{color:"#8ec3b9"}]},{elementType:"labels.text.stroke",stylers:[{color:"#1a3646"}]},{featureType:"road",elementType:"geometry",stylers:[{color:"#304a7d"}]},{featureType:"road",elementType:"labels.text.fill",stylers:[{color:"#98a5be"}]},{featureType:"water",elementType:"geometry",stylers:[{color:"#0e1626"}]}];
+function applyMapStyle(mode){if(mapEngine==="google")map.setOptions({styles:mode==="dark"?GOOGLE_DARK_STYLES:null});else if(map){if(baseTileLayer)map.removeLayer(baseTileLayer);if(darkTileLayer)map.removeLayer(darkTileLayer);(mode==="dark"?darkTileLayer:baseTileLayer)?.addTo(map);}}
+$$('input[name="map-style"]').forEach(r=>r.addEventListener("change",()=>{if(r.checked)applyMapStyle(r.value);}));
+async function setupTraffic(){const toggle=$("#traffic-toggle"),status=$("#traffic-status");if(!toggle)return;try{const s=await fetchJson("/api/maps-status");status.textContent=s.trafficAvailable?`Tráfico en tiempo real · ${s.provider||"proveedor"}`:"Tráfico: proveedor no configurado";toggle.disabled=!s.trafficAvailable;toggle.addEventListener("change",()=>{if(mapEngine==="google"&&window.google?.maps){if(!googleTrafficLayer)googleTrafficLayer=new google.maps.TrafficLayer();googleTrafficLayer.setMap(toggle.checked?map:null);}else{if(toggle.checked){trafficLayer=L.tileLayer("/api/traffic/{z}/{x}/{y}",{opacity:.72,maxZoom:19}).addTo(map);}else if(trafficLayer){map.removeLayer(trafficLayer);trafficLayer=null;}}});}catch{status.textContent="Tráfico no disponible";toggle.disabled=true;}}
 async function loadAdminSessionInfo(){const box=$("#admin-session-info");if(!box)return;try{const s=await fetchJson("/api/admin/session-info"),ua=s.browser||"";let browser=ua.includes("Edg/")?"Microsoft Edge":ua.includes("Chrome/")?"Google Chrome":ua.includes("Firefox/")?"Firefox":ua.includes("Safari/")?"Safari":"Navegador";box.innerHTML=`<b>Inicio de sesión</b><span>${escapeHtml(s.city||"")} ${escapeHtml(s.country||"")}</span><span>${escapeHtml(browser)}</span><span>IP: ${escapeHtml(s.ip||"—")}</span><small>${escapeHtml(fmtDate(s.loginAt))}</small>`;}catch{box.innerHTML="<b>Sesión administrativa</b><span>Información no disponible</span>";}}
 
 /* logout completo */
@@ -377,6 +359,6 @@ window.adminLogout=async function(){
   location.replace("/admin-login.html");
 };
 
-initializeMap();toggleServiceFields();toggleSchedule();setMapSelection("pickup");updateAssignedDriverSummary();
-loadRegisteredClients();loadConnectedDrivers();loadDispatchTrips();loadNotifications();loadAdminSessionInfo();setupTraffic();
+initializeMap().then(()=>setupTraffic()).catch(()=>{});toggleServiceFields();toggleSchedule();setMapSelection("pickup");updateAssignedDriverSummary();
+loadRegisteredClients();loadConnectedDrivers();loadDispatchTrips();loadNotifications();loadAdminSessionInfo();
 setInterval(loadConnectedDrivers,4000);setInterval(loadDispatchTrips,7000);setInterval(loadNotifications,4000);
