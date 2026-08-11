@@ -326,7 +326,7 @@ function haversineKm(a, b) {
   const q = Math.sin(dLat/2)**2 + Math.cos(rad(a.lat))*Math.cos(rad(b.lat))*Math.sin(dLon/2)**2;
   return 2 * R * Math.asin(Math.sqrt(q));
 }
-async function estimateRoute(pickup, destination, stops = []) {
+async function estimateRoute(pickup, destination, stops = [], passengerCount = 1) {
   const a = { lat: Number(pickup.lat), lon: Number(pickup.lon) };
   const b = { lat: Number(destination.lat), lon: Number(destination.lon) };
   if (![a.lat,a.lon,b.lat,b.lon].every(Number.isFinite)) throw new HttpError(400, "Coordenadas inválidas.");
@@ -345,9 +345,12 @@ async function estimateRoute(pickup, destination, stops = []) {
     distanceKm = Math.max(0.1, haversineKm(a,b) * 1.25);
     durationMin = Math.max(2, Math.ceil(distanceKm / 25 * 60));
   }
+  const count=Math.min(4,Math.max(1,Math.floor(Number(passengerCount||1))));
+  const passengerSurcharge=Math.max(0,(count-1)*50);
   const rawPrice = FARE_BASE_DOP + distanceKm * FARE_PER_KM_DOP;
-  const priceDop = Math.max(FARE_MIN_DOP, Math.round(rawPrice / 50) * 50);
-  return { distanceKm, durationMin, priceDop };
+  const routePrice = Math.max(FARE_MIN_DOP, Math.round(rawPrice / 50) * 50);
+  const priceDop = routePrice + passengerSurcharge;
+  return { distanceKm, durationMin, routePriceDop:routePrice, passengerSurchargeDop:passengerSurcharge, passengerCount:count, priceDop };
 }
 async function resolveRideProfile(request, db, body) {
   const sessionProfile = await profileSession(request, db);
@@ -524,7 +527,7 @@ async function handleApi(request, env, url, headers) {
   if (path === "/api/rides/estimate" && method === "POST") {
     const body=await bodyJson(request);
     if (!body.pickup || !body.destination) throw new HttpError(400,"Selecciona recogida y destino.");
-    const estimate=await estimateRoute(body.pickup,body.destination,body.stops||[]);
+    const estimate=await estimateRoute(body.pickup,body.destination,body.stops||[],body.passengerCount||1);
     return json({pickup:body.pickup,destination:body.destination,estimate},200,headers);
   }
 
@@ -532,7 +535,7 @@ async function handleApi(request, env, url, headers) {
     const body=await bodyJson(request);
     if (!body.pickup || !body.destination) throw new HttpError(400,"Selecciona recogida y destino.");
     const profile=await resolveRideProfile(request,db,body);
-    const estimate=await estimateRoute(body.pickup,body.destination,body.stops||[]);
+    const estimate=await estimateRoute(body.pickup,body.destination,body.stops||[],body.passengerCount||1);
     const stamp=nowIso(),rid=id("RID");
     let driverDbId=null;
     if (body.driverId) {
@@ -542,7 +545,7 @@ async function handleApi(request, env, url, headers) {
     const offerAfter=new Date(Date.now()+3000).toISOString();
     const result=await db.prepare(`INSERT INTO rides(public_id,profile_id,passenger_type,passenger_name,passenger_phone,pickup_address,pickup_lat,pickup_lon,destination_address,destination_lat,destination_lon,status,driver_id,note,payment_method,passenger_count,scheduled_at,price_dop,distance_km,duration_min,created_at,accepted_at,offer_after_at)
       VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
-      .bind(rid,profile.id,profile.kind,profile.name,profile.phone,clean(body.pickup.address),Number(body.pickup.lat),Number(body.pickup.lon),clean(body.destination.address),Number(body.destination.lat),Number(body.destination.lon),"pending",driverDbId,clean(body.note),clean(body.paymentMethod),Math.max(1,Number(body.passengerCount||1)),body.scheduledAt||null,estimate.priceDop,estimate.distanceKm,estimate.durationMin,stamp,null,offerAfter).run();
+      .bind(rid,profile.id,profile.kind,profile.name,profile.phone,clean(body.pickup.address),Number(body.pickup.lat),Number(body.pickup.lon),clean(body.destination.address),Number(body.destination.lat),Number(body.destination.lon),"pending",driverDbId,clean(body.note),clean(body.paymentMethod),Math.min(4,Math.max(1,Number(body.passengerCount||1))),body.scheduledAt||null,estimate.priceDop,estimate.distanceKm,estimate.durationMin,stamp,null,offerAfter).run();
     const rideId=result.meta.last_row_id;
     const stops=Array.isArray(body.stops)?body.stops:[];
     for (let i=0;i<stops.length;i++) {
@@ -710,9 +713,15 @@ async function handleApi(request, env, url, headers) {
     const d=await driverSession(request,db); if (!d) throw new HttpError(401,"Sesión expirada.");
     const active=await db.prepare(`SELECT r.*,dr.public_id driver_public_id,dr.first_name,dr.last_name FROM rides r LEFT JOIN drivers dr ON dr.id=r.driver_id
       WHERE r.driver_id=? AND r.status IN ('accepted','driver_arriving','arrived','in_progress') ORDER BY r.created_at DESC LIMIT 1`).bind(d.id).first();
+    const suvEligible=/suv|sport utility|jeep|crossover/i.test(`${d.vehicle_type||""} ${d.vehicle_brand||""} ${d.vehicle_model||""}`)?1:0;
     const {results:offers}=await db.prepare(`SELECT r.*,NULL driver_public_id,NULL first_name,NULL last_name FROM rides r
-      WHERE r.status='pending' AND (r.scheduled_at IS NULL OR r.scheduled_at<=?) AND (r.offer_after_at IS NULL OR r.offer_after_at<=?) AND (r.driver_id IS NULL OR r.driver_id=?) AND NOT EXISTS(SELECT 1 FROM ride_rejections x WHERE x.ride_id=r.id AND x.driver_id=?)
-      ORDER BY COALESCE(r.scheduled_at,r.created_at) ASC LIMIT 5`).bind(nowIso(),nowIso(),d.id,d.id).all();
+      WHERE r.status='pending'
+        AND (r.scheduled_at IS NULL OR r.scheduled_at<=?)
+        AND (r.offer_after_at IS NULL OR r.offer_after_at<=?)
+        AND (r.driver_id IS NULL OR r.driver_id=?)
+        AND (r.driver_id IS NOT NULL OR r.passenger_count<=2 OR ?=1)
+        AND NOT EXISTS(SELECT 1 FROM ride_rejections x WHERE x.ride_id=r.id AND x.driver_id=?)
+      ORDER BY COALESCE(r.scheduled_at,r.created_at) ASC LIMIT 5`).bind(nowIso(),nowIso(),d.id,suvEligible,d.id).all();
     return json({activeRide:active?await rideView(db,active,true):null,offers:await Promise.all((offers||[]).map(r=>rideView(db,r,true))),queuedOffers:[]},200,headers);
   }
 
@@ -1131,6 +1140,14 @@ async function handleApi(request, env, url, headers) {
   }
 
   // ---------- DISPATCH ----------
+
+
+  if (path === "/api/dispatch/recent-phones" && method === "GET") {
+    const {results}=await db.prepare(`SELECT p.phone,p.name,MAX(r.created_at) last_service_at,COUNT(r.id) services
+      FROM rides r JOIN profiles p ON p.id=r.profile_id
+      GROUP BY p.id,p.phone,p.name ORDER BY MAX(r.created_at) DESC LIMIT 5`).all();
+    return json({phones:(results||[]).map(r=>({phone:r.phone,name:r.name,lastServiceAt:r.last_service_at,services:Number(r.services||0)}))},200,headers);
+  }
 
   if (path === "/api/dispatch/customer-status" && method === "GET") {
     const p=phone(url.searchParams.get("phone")); if(!p) throw new HttpError(400,"Teléfono inválido.");

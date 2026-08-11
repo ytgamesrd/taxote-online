@@ -72,7 +72,7 @@
         <a href="#" id="open-security"><span>🛡</span> Sesiones y seguridad</a>
         <a href="#" onclick="adminLogout()" style="color:#df5050"><span>×</span> Cerrar sesión</a>
       </nav>
-      <div id="admin-session-info" class="admin-session-info"><b>Sesión administrativa</b><span>Cargando información…</span></div><div class="side-menu-footer"><p><b>Administrador</b><small>Operaciones TAXOTE</small></p></div>
+      <div class="side-menu-footer"><p><b>Administrador</b><small>Operaciones TAXOTE</small></p></div>
     </aside>
 
     <main class="workspace">
@@ -116,7 +116,7 @@
             <div id="selected-customer" class="selected-customer" hidden></div>
 
             <div id="guest-fields" class="guest-fields" hidden>
-              <div class="field guest-phone-field"><span>Teléfono de República Dominicana</span><div class="guest-phone-lookup"><div class="phone-control"><b>+1</b><input id="guest-phone" type="tel" placeholder="809 000 0000" maxlength="12" /></div><button id="guest-history-search" type="button">⌕</button></div></div>
+              <div class="field guest-phone-field"><span>Teléfono de República Dominicana</span><div class="guest-phone-lookup"><div class="phone-control"><b>+1</b><input id="guest-phone" type="tel" placeholder="809 000 0000" maxlength="12" list="recent-phone-list" autocomplete="off" /><datalist id="recent-phone-list"></datalist><div id="recent-phone-chips" class="recent-phone-chips"></div></div><button id="guest-history-search" type="button">⌕</button></div></div>
               <p id="guest-history-status" class="guest-history-status">Escribe el teléfono y toca la lupa.</p>
               <label class="field guest-name-field"><span>Nombre del invitado</span><input id="guest-name" type="text" placeholder="Nombre y apellido" /></label>
             </div>
@@ -161,7 +161,7 @@
             </label>
 
             <div class="form-grid three-cols compact-fields">
-              <label class="field select-field"><span>Pasajeros</span><select id="passenger-count-select"><option>1 pasajero</option><option>2 pasajeros</option><option>3 pasajeros</option></select></label>
+              <label class="field select-field"><span>Pasajeros</span><select id="passenger-count-select"><option value="1">1 pasajero</option><option value="2">2 pasajeros (+RD$50)</option><option value="3">3 pasajeros (+RD$100 · SUV automático)</option><option value="4">4 pasajeros (+RD$150 · SUV automático)</option></select></label>
               <label class="field select-field"><span>Paradas</span><select id="stop-count-select"><option value="0">Sin paradas</option><option value="1">1 parada</option><option value="2">2 paradas</option><option value="3">3 paradas</option></select></label>
               <label class="field select-field"><span>Pago</span><select id="payment-method-select"><option>Efectivo</option><option>Tarjeta</option><option>Cuenta empresa</option></select></label>
             </div>
@@ -299,5 +299,6 @@
     </script>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="js/app.js?v=20260810-200"></script>
-  </body>
+    <script src="js/admin-menu.js?v=20260810-6"></script>
+</body>
 </html>

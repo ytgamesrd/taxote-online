@@ -15,7 +15,7 @@ const driverAssignInput=$("#driver-assign-id");
 let toastTimer, selectedCustomer=null, selectedDriverId="", activeMapSelection="pickup";
 let map, routeLayer, markerLayer, driverLocationLayer, baseTileLayer, darkTileLayer, mapEngine="leaflet", googleTrafficLayer=null, googleRoutePolyline=null, googleSelectionMarkers=[], googleDriverMarkers=[];
 let dispatchTrips=[], connectedDrivers=[], routeStops=[], tripFilter='active';
-let routeRequestId=0, previousNotificationIds=new Set(), notificationInitialized=false, previousChatUnread=0, detailTripId="", etaTimer=null;
+let routeRequestId=0, previousNotificationIds=new Set(), notificationInitialized=false, previousChatUnread=0, detailTripId="", etaTimer=null, suppressOwnRideSoundUntil=0;
 
 const selectedLocations={pickup:null,destination:null};
 const defaultCenter=[18.49,-69.98], defaultZoom=11;
@@ -103,6 +103,17 @@ function toggleSchedule(){
   if(scheduled){const now=new Date();scheduleDate.min=now.toISOString().slice(0,10);}
 }
 travelTime?.addEventListener("change",toggleSchedule);
+
+
+async function loadRecentPhones(){
+  const list=$("#recent-phone-list"),chips=$("#recent-phone-chips");if(!list||!chips)return;
+  try{
+    const data=await fetchJson("/api/dispatch/recent-phones"),phones=data.phones||[];
+    list.innerHTML=phones.map(p=>`<option value="${escapeHtml(p.phone)}">${escapeHtml(p.name)}</option>`).join("");
+    chips.innerHTML=phones.map(p=>`<button type="button" data-recent-phone="${escapeHtml(p.phone)}" title="${escapeHtml(p.name)}">${escapeHtml(p.phone)}</button>`).join("");
+    chips.querySelectorAll("[data-recent-phone]").forEach(b=>b.addEventListener("click",async()=>{$("#guest-phone").value=b.dataset.recentPhone;await getCustomerStatus(b.dataset.recentPhone,true);$("#guest-history-search")?.click();}));
+  }catch{}
+}
 
 /* mapa */
 function markerIcon(kind,num=0){
@@ -347,12 +358,12 @@ bookingForm?.addEventListener("submit",async e=>{
   e.preventDefault();const guest=serviceType.value==="Invitado";const name=guest?$("#guest-name").value:selectedCustomer?.name,phone=guest?$("#guest-phone").value:selectedCustomer?.phone;
   if(!name||!phone||!selectedLocations.pickup||!selectedLocations.destination)return showToast("Completa pasajero, recogida y destino.");
   const customerStatus=await getCustomerStatus(phone,false);if(customerStatus?.activeRides?.length&&!await confirmDuplicateRide(customerStatus))return;
-  try{const scheduledAt=scheduledValue(),stops=routeStops.filter(s=>s.location).map(s=>s.location);const est=await fetchJson("/api/rides/estimate",{method:"POST",body:{pickup:selectedLocations.pickup,destination:selectedLocations.destination,stops}}),estimate=est.estimate||{};
-    pendingRidePayload={phone,name,pickup:selectedLocations.pickup,destination:selectedLocations.destination,stops,driverId:selectedDriverId||undefined,note:$("#dispatch-note").value,scheduledAt,passengerCount:Number($("#passenger-count-select").value?.match(/\d+/)?.[0]||1),paymentMethod:$("#payment-method-select").value};
-    $("#fare-modal-route").innerHTML=`<b>${escapeHtml(selectedLocations.pickup.address)}</b><span>→</span><b>${escapeHtml(selectedLocations.destination.address)}</b>`;$("#fare-modal-price").textContent=fmtPrice(estimate.priceDop);$("#fare-modal-distance").textContent=`${Number(estimate.distanceKm||0).toFixed(2)} km`;$("#fare-modal-duration").textContent=`${Number(estimate.durationMin||0)} min`;$("#fare-modal").hidden=false;
+  try{const scheduledAt=scheduledValue(),stops=routeStops.filter(s=>s.location).map(s=>s.location);const est=await fetchJson("/api/rides/estimate",{method:"POST",body:{pickup:selectedLocations.pickup,destination:selectedLocations.destination,stops,passengerCount:Number($("#passenger-count-select").value||1)}}),estimate=est.estimate||{};
+    pendingRidePayload={phone,name,pickup:selectedLocations.pickup,destination:selectedLocations.destination,stops,driverId:selectedDriverId||undefined,note:$("#dispatch-note").value,scheduledAt,passengerCount:Math.min(4,Math.max(1,Number($("#passenger-count-select").value||1))),paymentMethod:$("#payment-method-select").value};
+    $("#fare-modal-route").innerHTML=`<b>${escapeHtml(selectedLocations.pickup.address)}</b><span>→</span><b>${escapeHtml(selectedLocations.destination.address)}</b>`;$("#fare-modal-price").textContent=fmtPrice(estimate.priceDop);$("#fare-modal-distance").textContent=`${Number(estimate.distanceKm||0).toFixed(2)} km`;$("#fare-modal-duration").textContent=`${Number(estimate.durationMin||0)} min`;const fee=Number(estimate.passengerSurchargeDop||0);$("#fare-modal-distance").title=fee?`Incluye RD$${fee} por ${Number(estimate.passengerCount||1)} pasajeros`:"Sin cargo adicional por pasajeros";$("#fare-modal").hidden=false;
   }catch(err){showToast(err.message);}
 });
-$("#confirm-create-ride")?.addEventListener("click",async()=>{if(!pendingRidePayload)return;const b=$("#confirm-create-ride");b.disabled=true;try{const data=await fetchJson("/api/rides",{method:"POST",body:pendingRidePayload});$("#fare-modal").hidden=true;showToast(`Servicio ${data.ride?.id||""} enviado.`);pendingRidePayload=null;clearBookingForm();await loadDispatchTrips();}catch(e){showToast(e.message);}finally{b.disabled=false;}});
+$("#confirm-create-ride")?.addEventListener("click",async()=>{if(!pendingRidePayload)return;const b=$("#confirm-create-ride");b.disabled=true;try{suppressOwnRideSoundUntil=Date.now()+8000;const data=await fetchJson("/api/rides",{method:"POST",body:pendingRidePayload});$("#fare-modal").hidden=true;showToast(`Servicio ${data.ride?.id||""} enviado.`);pendingRidePayload=null;clearBookingForm();await Promise.all([loadDispatchTrips(),loadRecentPhones()]);}catch(e){showToast(e.message);}finally{b.disabled=false;}});
 function clearBookingForm(){
   bookingForm?.reset();selectedCustomer=null;selectedDriverId="";selectedLocations.pickup=null;selectedLocations.destination=null;
   routeStops.forEach(s=>s.row.remove());routeStops=[];stopSeq=0;
@@ -360,6 +371,7 @@ function clearBookingForm(){
   updateAssignedDriverSummary();toggleServiceFields();toggleSchedule();setMapSelection("pickup");renderSelectionMarkers();routeLayer?.clearLayers();routeNotice.textContent="Selecciona origen y destino para ver la ruta.";map?.setView(defaultCenter,defaultZoom);
 }
 $("#clear-form")?.addEventListener("click",e=>{e.preventDefault();clearBookingForm();showToast("Formulario limpio.");});
+$("#passenger-count-select")?.addEventListener("change",()=>{const n=Number($("#passenger-count-select").value||1);if(n>=3&&!selectedDriverId)showToast(`${n} pasajeros: TAXOTE buscará automáticamente vehículos SUV disponibles.`);});
 
 /* controles horizontales de tabla */
 function bindScrollButton(id,dir){const b=$(id),sc=$("#trip-table-scroll");if(!b||!sc)return;let timer=null;const step=()=>sc.scrollBy({left:dir*280,behavior:"smooth"});b.addEventListener("click",step);b.addEventListener("pointerdown",()=>{timer=setInterval(()=>sc.scrollBy({left:dir*45}),80);});["pointerup","pointerleave","pointercancel"].forEach(ev=>b.addEventListener(ev,()=>{clearInterval(timer);timer=null;}));}
@@ -380,7 +392,7 @@ function renderNotifications(data){
   const ids=new Set(list.map(n=>Number(n.id)));
   if(notificationInitialized){
     const fresh=list.find(n=>!previousNotificationIds.has(Number(n.id))&&!n.readAt);
-    if(fresh){notificationSound.currentTime=0;notificationSound.play().catch(()=>{});notificationButton?.classList.add("notification-button-pulse");setTimeout(()=>notificationButton?.classList.remove("notification-button-pulse"),1800);showToast(fresh.title);if("Notification" in window&&Notification.permission==="granted")new Notification(`TAXOTE · ${fresh.title}`,{body:fresh.body});}
+    if(fresh){const ownRideSuppressed=fresh.kind==="ride"&&Date.now()<suppressOwnRideSoundUntil;if(!ownRideSuppressed){notificationSound.currentTime=0;notificationSound.play().catch(()=>{});}notificationButton?.classList.add("notification-button-pulse");setTimeout(()=>notificationButton?.classList.remove("notification-button-pulse"),1800);if(!ownRideSuppressed)showToast(fresh.title);if(!ownRideSuppressed&&"Notification" in window&&Notification.permission==="granted")new Notification(`TAXOTE · ${fresh.title}`,{body:fresh.body});}
   }
   previousNotificationIds=ids;notificationInitialized=true;
 }
@@ -425,5 +437,5 @@ window.adminLogout=async function(){
 };
 
 initializeMap().then(()=>setupTraffic()).catch(()=>{});toggleServiceFields();toggleSchedule();setMapSelection("pickup");updateAssignedDriverSummary();
-loadRegisteredClients();loadConnectedDrivers();loadDispatchTrips();loadNotifications();loadAdminSessionInfo();
+loadRegisteredClients();loadConnectedDrivers();loadDispatchTrips();loadNotifications();loadAdminSessionInfo();loadRecentPhones();
 setInterval(loadConnectedDrivers,4000);setInterval(loadDispatchTrips,7000);setInterval(loadNotifications,4000);
