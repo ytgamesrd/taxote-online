@@ -100,7 +100,14 @@ function toggleServiceFields(){const guest=serviceType?.value==="Invitado";$(".c
 serviceType?.addEventListener("change",toggleServiceFields);
 function toggleSchedule(){
   const scheduled=travelTime?.value==="scheduled"; if(scheduleFields)scheduleFields.hidden=!scheduled;
-  if(scheduled){const now=new Date();scheduleDate.min=now.toISOString().slice(0,10);}
+  scheduleDate.required=scheduled;scheduleTime.required=scheduled;
+  if(scheduled){
+    const now=new Date(),future=new Date(now.getTime()+30*60*1000);
+    const localDate=new Date(future.getTime()-future.getTimezoneOffset()*60000);
+    scheduleDate.min=new Date(now.getTime()-now.getTimezoneOffset()*60000).toISOString().slice(0,10);
+    if(!scheduleDate.value)scheduleDate.value=localDate.toISOString().slice(0,10);
+    if(!scheduleTime.value)scheduleTime.value=localDate.toISOString().slice(11,16);
+  }
 }
 travelTime?.addEventListener("change",toggleSchedule);
 
@@ -162,7 +169,7 @@ function clearRouteVisual(){if(mapEngine==="google"){if(googleRoutePolyline){goo
 function drawPolyline(coords,color="#0b2e47"){clearRouteVisual();if(mapEngine==="google"){googleRoutePolyline=new google.maps.Polyline({path:coords.map(([lon,lat])=>({lat,lng:lon})),strokeColor:color,strokeOpacity:1,strokeWeight:5,map});}else L.polyline(coords.map(([lon,lat])=>[lat,lon]),{color,weight:5}).addTo(routeLayer);}
 async function drawRouteForPoints(pts,notice=true){clearRouteVisual();if(pts.length<2){if(notice)routeNotice.textContent="Selecciona origen y destino para ver la ruta.";return;}const req=++routeRequestId,coords=pts.map(p=>`${p.lon},${p.lat}`).join(";");try{const data=await fetchJson(`/api/route?coordinates=${encodeURIComponent(coords)}`);if(req!==routeRequestId)return;if(data.routes?.[0]){const r=data.routes[0];drawPolyline(r.geometry.coordinates);if(notice)routeNotice.textContent=`Ruta lista: ${(r.distance/1000).toFixed(1)} km · ${Math.ceil(r.duration/60)} min`;}}catch(e){if(notice)routeNotice.textContent="No se pudo calcular la ruta ahora.";}}
 async function calculateRoadRoute(){return drawRouteForPoints(routePoints(),true);}
-function fitPoints(pts){if(!pts.length){if(mapEngine==="google"){map.setCenter({lat:defaultCenter[0],lng:defaultCenter[1]});map.setZoom(defaultZoom);}else map.setView(defaultCenter,defaultZoom);return;}if(mapEngine==="google"){const b=new google.maps.LatLngBounds();pts.forEach(p=>b.extend({lat:Number(p.lat),lng:Number(p.lon)}));map.fitBounds(b,55);}else map.fitBounds(L.latLngBounds(pts.map(p=>[p.lat,p.lon])),{padding:[55,55],maxZoom:14});}
+function fitPoints(pts){if(!pts.length){if(mapEngine==="google"){map.setCenter({lat:defaultCenter[0],lng:defaultCenter[1]});map.setZoom(defaultZoom);}else map.setView(defaultCenter,defaultZoom);return;}if(mapEngine==="google"){const b=new google.maps.LatLngBounds();pts.forEach(p=>b.extend({lat:Number(p.lat),lng:Number(p.lon)}));map.fitBounds(b,24);google.maps.event.addListenerOnce(map,"idle",()=>{if(map.getZoom()>16)map.setZoom(16);});}else map.fitBounds(L.latLngBounds(pts.map(p=>[p.lat,p.lon])),{padding:[28,28],maxZoom:16});}
 function fitCurrentRoute(){fitPoints(routePoints());}
 $("#recenter")?.addEventListener("click",()=>detailTripId?showTripOnMap(detailTripId,true):fitCurrentRoute());
 $("#pick-pickup-map")?.addEventListener("click",()=>{setMapSelection("pickup");showToast("Haz clic donde quieras colocar A.");});
@@ -231,12 +238,12 @@ function updateAssignedDriverSummary(){
 }
 function selectDriver(id){
   const d=connectedDrivers.find(x=>x.id===id);if(!d)return;
-  if(d.connectionState==="busy")return showToast("Ese conductor está ocupado.");
-  selectedDriverId=id;updateAssignedDriverSummary();renderConnectedDrivers();$("#driver-search-results").hidden=true;$("#driver-assign-search").value=d.name;showToast(`${d.name} seleccionado para recibir el servicio.`);
+  selectedDriverId=id;updateAssignedDriverSummary();renderConnectedDrivers();$("#driver-search-results").hidden=true;$("#driver-assign-search").value=d.name;
+  showToast(d.connectionState==="busy"?`${d.name} está ocupado. La oferta quedará en cola y aparecerá cuando termine su viaje actual.`:`${d.name} seleccionado para recibir el servicio.`);
 }
 function renderConnectedDrivers(){
   const q=($("#connected-driver-search")?.value||"").trim().toLowerCase();
-  const visible=connectedDrivers.filter(d=>`${d.name} ${d.vehiclePlate}`.toLowerCase().includes(q));
+  const visible=connectedDrivers.filter(d=>`${d.name} ${d.vehiclePlate} ${d.vehicleBrand||""} ${d.vehicleModel||""}`.toLowerCase().includes(q));
   $("#connected-drivers-list").innerHTML=visible.length?visible.map((d,i)=>`<article class="driver driver-row ${d.connectionState==="busy"?"busy":""} ${d.id===selectedDriverId?"selected-driver":""}"><span class="driver-index">${i+1}</span><span class="driver-online-dot"></span><button class="driver-locate" type="button" data-locate-driver="${escapeHtml(d.id)}"><b>${escapeHtml(d.name)}</b><small>${escapeHtml(d.vehicleBrand||"")} ${escapeHtml(d.vehicleModel||"")} · ${escapeHtml(d.vehiclePlate||"")}</small></button><button class="driver-message" type="button" data-chat-driver="${escapeHtml(d.id)}" title="Mensaje privado">💬</button><span class="driver-state">${driverStatus(d)}</span></article>`).join(""):'<div style="padding:20px;text-align:center;color:#888;font-size:12px;">No hay conductores conectados.</div>';
   $("#connected-drivers-list").querySelectorAll("[data-locate-driver]").forEach(el=>el.addEventListener("click",()=>locateConnectedDriver(el.dataset.locateDriver)));
   $("#connected-drivers-list").querySelectorAll("[data-chat-driver]").forEach(el=>el.addEventListener("click",()=>openDriverQuickChat(el.dataset.chatDriver)));
@@ -244,29 +251,64 @@ function renderConnectedDrivers(){
 function renderAssignSearch(){
   const q=($("#driver-assign-search")?.value||"").trim().toLowerCase(),box=$("#driver-search-results");
   if(!q){box.hidden=true;return;}
-  const list=connectedDrivers.filter(d=>`${d.name} ${d.vehiclePlate}`.toLowerCase().includes(q)).slice(0,10);
-  box.innerHTML=list.length?list.map(d=>`<button type="button" class="driver-choice ${d.connectionState==="busy"?"busy":""}" data-driver="${escapeHtml(d.id)}"><span><b>${escapeHtml(d.name)}</b><small>${escapeHtml(d.vehiclePlate||"")}</small></span><strong>${driverStatus(d)}</strong></button>`).join(""):'<div class="driver-choice">No encontrado</div>';
+  const list=connectedDrivers.filter(d=>`${d.name} ${d.vehiclePlate} ${d.vehicleBrand||""} ${d.vehicleModel||""}`.toLowerCase().includes(q)).slice(0,12);
+  box.innerHTML=list.length?list.map(d=>`<button type="button" class="driver-choice ${d.connectionState==="busy"?"busy":""}" data-driver="${escapeHtml(d.id)}"><span><b>${escapeHtml(d.name)}</b><small>${escapeHtml(d.vehiclePlate||"")} · ${escapeHtml(d.vehicleBrand||"")} ${escapeHtml(d.vehicleModel||"")}</small></span><strong>${driverStatus(d)}</strong></button>`).join(""):'<div class="driver-choice">No encontrado</div>';
   box.hidden=false;box.querySelectorAll("[data-driver]").forEach(b=>b.addEventListener("click",()=>selectDriver(b.dataset.driver)));
 }
 async function loadConnectedDrivers(){
   try{connectedDrivers=await fetchJson("/api/admin/driver-locations");renderConnectedDrivers();renderDriverLocations();renderAssignSearch();}catch{}
 }
-function renderDriverLocations(){if(mapEngine==="google"){googleDriverMarkers.forEach(m=>m.setMap(null));googleDriverMarkers=[];connectedDrivers.forEach(d=>{if(!d.location)return;const m=new google.maps.Marker({position:{lat:Number(d.location.lat),lng:Number(d.location.lon)},map,title:d.name,icon:{url:"/assets/taxote-car.png",scaledSize:new google.maps.Size(28,32)}});m.addListener("click",()=>locateConnectedDriver(d.id));googleDriverMarkers.push(m);});}else{driverLocationLayer?.clearLayers();connectedDrivers.forEach(d=>{if(!d.location)return;L.marker([d.location.lat,d.location.lon],{icon:L.divIcon({className:"taxote-car-marker",html:`<img src="/assets/taxote-car.png" style="width:32px;height:35px;transform:rotate(${Number(d.location.bearing||0)}deg)">`})}).addTo(driverLocationLayer).bindPopup(`<b>${escapeHtml(d.name)}</b><br>${escapeHtml(d.vehiclePlate||"")}`);});}}
+function driverPopupHtml(d){
+  const photo=`/api/admin/drivers/${encodeURIComponent(d.id)}/document/selfie`;
+  return `<div class="driver-map-popup"><img src="${photo}" alt="Foto de ${escapeHtml(d.name)}" onerror="this.style.display='none'"><div><b>${escapeHtml(d.name)}</b><small>${escapeHtml(d.vehicleBrand||"")} ${escapeHtml(d.vehicleModel||"")} · ${escapeHtml(d.vehiclePlate||"")}</small><span>${escapeHtml(driverStatus(d))}</span></div></div>`;
+}
+function renderDriverLocations(){
+  if(mapEngine==="google"){
+    googleDriverMarkers.forEach(m=>m.setMap(null));googleDriverMarkers=[];
+    connectedDrivers.forEach(d=>{if(!d.location)return;const m=new google.maps.Marker({position:{lat:Number(d.location.lat),lng:Number(d.location.lon)},map,title:d.name,icon:{url:"/assets/taxote-car.png",scaledSize:new google.maps.Size(28,32)}});const info=new google.maps.InfoWindow({content:driverPopupHtml(d)});m.addListener("click",()=>{selectedDriverId=d.id;updateAssignedDriverSummary();renderConnectedDrivers();info.open({anchor:m,map});if(detailTripId)setTimeout(()=>showTripOnMap(detailTripId,false),350);});googleDriverMarkers.push(m);});
+  }else{
+    driverLocationLayer?.clearLayers();
+    connectedDrivers.forEach(d=>{if(!d.location)return;const m=L.marker([d.location.lat,d.location.lon],{icon:L.divIcon({className:"taxote-car-marker",html:`<img src="/assets/taxote-car.png" style="width:32px;height:35px;transform:rotate(${Number(d.location.bearing||0)}deg)">`})}).addTo(driverLocationLayer).bindPopup(driverPopupHtml(d),{maxWidth:280});m.on("click",()=>{selectedDriverId=d.id;updateAssignedDriverSummary();renderConnectedDrivers();if(detailTripId)setTimeout(()=>showTripOnMap(detailTripId,false),350);});});
+  }
+}
 $("#connected-driver-search")?.addEventListener("input",renderConnectedDrivers);
 let quickChatDriverId="";
-function locateConnectedDriver(id){const d=connectedDrivers.find(x=>x.id===id);if(!d?.location)return showToast("Ese conductor todavía no reporta ubicación.");selectedDriverId=id;updateAssignedDriverSummary();renderConnectedDrivers();if(mapEngine==="google"){map.panTo({lat:Number(d.location.lat),lng:Number(d.location.lon)});map.setZoom(16);}else map?.setView([Number(d.location.lat),Number(d.location.lon)],16,{animate:true});showToast(`${d.name} seleccionado y ubicado.`);}
-async function openDriverQuickChat(id){const d=connectedDrivers.find(x=>x.id===id);quickChatDriverId=id;$("#driver-chat-name").textContent=d?.name||"Conductor";$("#driver-chat-modal").hidden=false;try{const data=await fetchJson(`/api/admin/chats/${encodeURIComponent(id)}/messages`);$("#driver-chat-history").innerHTML=(data.messages||[]).slice(-20).map(m=>`<div class="quick-msg ${m.sender==="admin"?"mine":""}"><b>${m.sender==="admin"?"Central":escapeHtml(d?.name||"Driver")}</b><p>${escapeHtml(m.message||"")}</p></div>`).join("")||"<p>Sin mensajes todavía.</p>";}catch(e){showToast(e.message);}}
+function locateConnectedDriver(id){
+  const d=connectedDrivers.find(x=>x.id===id);if(!d?.location)return showToast("Ese conductor todavía no reporta ubicación.");
+  selectedDriverId=id;updateAssignedDriverSummary();renderConnectedDrivers();
+  if(mapEngine==="google"){map.panTo({lat:Number(d.location.lat),lng:Number(d.location.lon)});map.setZoom(16);}else map?.setView([Number(d.location.lat),Number(d.location.lon)],16,{animate:true});
+  showToast(`${d.name} seleccionado y ubicado.`);if(detailTripId)setTimeout(()=>showTripOnMap(detailTripId,false),350);
+}
+async function openDriverQuickChat(id){
+  const d=connectedDrivers.find(x=>x.id===id);quickChatDriverId=id;$("#driver-chat-name").textContent=d?.name||"Conductor";$("#driver-chat-modal").hidden=false;
+  try{const data=await fetchJson(`/api/admin/chats/${encodeURIComponent(id)}/messages`);$("#driver-chat-history").innerHTML=(data.messages||[]).slice(-20).map(m=>`<div class="quick-msg ${m.sender==="admin"?"mine":""}"><b>${m.sender==="admin"?"Central":escapeHtml(d?.name||"Driver")}</b><p>${escapeHtml(m.message||"")}</p></div>`).join("")||"<p>Sin mensajes todavía.</p>";}catch(e){showToast(e.message);}
+}
 $("#driver-quick-chat-form")?.addEventListener("submit",async e=>{e.preventDefault();const input=$("#driver-quick-chat-input"),message=input.value.trim();if(!message||!quickChatDriverId)return;try{await fetchJson(`/api/admin/chats/${encodeURIComponent(quickChatDriverId)}/messages`,{method:"POST",body:{message}});input.value="";$("#driver-chat-modal").hidden=true;showToast("Mensaje enviado");}catch(err){showToast(err.message);}});
 $$("[data-close-modal]").forEach(b=>b.addEventListener("click",()=>{$(`#${b.dataset.closeModal}`).hidden=true;if(b.dataset.closeModal==="eta-modal"){clearInterval(etaTimer);etaTimer=null;}}));
 $("#driver-assign-search")?.addEventListener("input",renderAssignSearch);
 
 /* viajes */
 const statusLabels={pending:"NUEVO",accepted:"Aceptado",driver_arriving:"En camino",arrived:"Llegó",in_progress:"En viaje",completed:"Terminado",cancelled:"Cancelado"};
-function tripRow(t){const canCancel=!["completed","cancelled"].includes(t.status),canArrive=["accepted","driver_arriving"].includes(t.status),hasDriver=!!t.driverId;return `<tr><td class="trip-actions-cell">${canCancel?`<button class="trip-cancel-btn" data-cancel-trip="${escapeHtml(t.id)}" title="Cancelar">×</button>`:""}<button class="eye-btn" data-eye="${escapeHtml(t.id)}" title="Ver detalles">👁</button>${hasDriver?`<button class="trip-eta-btn" data-eta-trip="${escapeHtml(t.id)}" title="Tiempo de llegada">⏱</button>`:""}${canArrive?`<button class="trip-arrived-btn" data-arrived-trip="${escapeHtml(t.id)}" title="Marcar llegó">✓ Llegó</button>`:""}</td><td>${escapeHtml(t.id)}</td><td><span class="status-chip status-${escapeHtml(t.status)}">${escapeHtml(statusLabels[t.status]||t.status)}</span></td><td>${escapeHtml(t.passenger)}</td><td>${escapeHtml(t.phone)}</td><td>${escapeHtml(t.driver)}</td><td>${t.contactedAt?"✓":"—"}</td><td>${escapeHtml(t.pickup)}</td><td>${escapeHtml(t.destination)}</td><td>${new Date(t.createdAt).toLocaleTimeString("es-DO",{hour:"2-digit",minute:"2-digit"})}</td></tr>`;}
+const tripColumnFilters={id:"",status:"",passenger:"",phone:"",driver:"",contacted:"",pickup:"",destination:""};
+function tripRow(t){
+  const canCancel=!["completed","cancelled"].includes(t.status),canArrive=["accepted","driver_arriving"].includes(t.status),hasDriver=!!t.driverId,statusText=t.status==="pending"?(t.driverId?"OFERTA":"NUEVO"):(statusLabels[t.status]||t.status);
+  return `<tr><td class="trip-actions-cell">${canCancel?`<button class="trip-cancel-btn" data-cancel-trip="${escapeHtml(t.id)}" title="Cancelar">×</button>`:""}<button class="eye-btn" data-eye="${escapeHtml(t.id)}" title="Ver detalles">👁</button>${hasDriver?`<button class="trip-eta-btn" data-eta-trip="${escapeHtml(t.id)}" title="Tiempo de llegada">⏱</button>`:""}${canArrive?`<button class="trip-arrived-btn" data-arrived-trip="${escapeHtml(t.id)}" title="Marcar llegó">✓ Llegó</button>`:""}</td><td>${escapeHtml(t.id)}</td><td><span class="status-chip status-${escapeHtml(t.status)}">${escapeHtml(statusText)}</span></td><td>${escapeHtml(t.passenger)}</td><td>${escapeHtml(t.phone)}</td><td>${escapeHtml(t.driver)}</td><td>${t.contactedAt?"✓":"—"}</td><td>${escapeHtml(t.pickup)}</td><td>${escapeHtml(t.destination)}</td><td>${new Date(t.createdAt).toLocaleTimeString("es-DO",{hour:"2-digit",minute:"2-digit"})}</td></tr>`;
+}
 function renderTrips(){
   const q=($("#trip-search")?.value||"").trim().toLowerCase(),counts={};dispatchTrips.forEach(t=>{if(t.driverId)counts[t.driverId]=(counts[t.driverId]||0)+1;});const now=Date.now();
-  const rows=dispatchTrips.filter(t=>{const scheduled=t.scheduledAt&&new Date(t.scheduledAt).getTime()>now;const doubleRide=t.driverId&&counts[t.driverId]>1;const f=tripFilter==="scheduled"?scheduled:tripFilter==="double"?doubleRide:!scheduled;return f&&(!q||JSON.stringify(t).toLowerCase().includes(q));});
-  $("#trip-table-body").innerHTML=rows.length?rows.map(tripRow).join(""):'<tr><td colspan="10" style="text-align:center;padding:22px;color:#81919a;">No hay servicios activos.</td></tr>';
+  const textMatch=(value,needle)=>!needle||String(value||"").toLowerCase().includes(String(needle).toLowerCase());
+  const rows=dispatchTrips.filter(t=>{
+    const scheduled=t.scheduledAt&&new Date(t.scheduledAt).getTime()>now,doubleRide=t.driverId&&counts[t.driverId]>1;
+    const tabOk=tripFilter==="scheduled"?scheduled:tripFilter==="double"?doubleRide:!scheduled;if(!tabOk)return false;
+    if(q&&!JSON.stringify(t).toLowerCase().includes(q))return false;
+    if(!textMatch(t.id,tripColumnFilters.id)||!textMatch(t.passenger,tripColumnFilters.passenger)||!textMatch(t.phone,tripColumnFilters.phone)||!textMatch(t.driver,tripColumnFilters.driver)||!textMatch(t.pickup,tripColumnFilters.pickup)||!textMatch(`${t.destination} ${(t.stops||[]).map(s=>s.address).join(" ")}`,tripColumnFilters.destination))return false;
+    if(tripColumnFilters.contacted==="yes"&&!t.contactedAt)return false;
+    if(tripColumnFilters.contacted==="no"&&t.contactedAt)return false;
+    if(tripColumnFilters.status==="new_unassigned"&&!(t.status==="pending"&&!t.driverId))return false;
+    if(tripColumnFilters.status&&tripColumnFilters.status!=="new_unassigned"&&t.status!==tripColumnFilters.status)return false;
+    return true;
+  });
+  $("#trip-table-body").innerHTML=rows.length?rows.map(tripRow).join(""):'<tr><td colspan="10" style="text-align:center;padding:22px;color:#81919a;">No hay servicios que coincidan con los filtros.</td></tr>';
   $("#current-trip-count").textContent=dispatchTrips.length;
   $("#trip-table-body").querySelectorAll("[data-eye]").forEach(b=>b.addEventListener("click",()=>viewTripDetails(b.dataset.eye)));
   $("#trip-table-body").querySelectorAll("[data-cancel-trip]").forEach(b=>b.addEventListener("click",()=>openCancelRide(b.dataset.cancelTrip)));
@@ -274,11 +316,23 @@ function renderTrips(){
   $("#trip-table-body").querySelectorAll("[data-arrived-trip]").forEach(b=>b.addEventListener("click",()=>markArrived(b.dataset.arrivedTrip)));
 }
 async function loadDispatchTrips(){try{dispatchTrips=await fetchJson("/api/dispatch/rides");renderTrips();}catch{}}
-async function showTripOnMap(id,fit=true){const t=dispatchTrips.find(x=>x.id===id);if(!t)return;clearSelectionMarkers();const pts=[{address:t.pickup,lat:Number(t.pickupLat),lon:Number(t.pickupLon)},...(t.stops||[]).map(s=>({address:s.address,lat:Number(s.lat),lon:Number(s.lon)})),{address:t.destination,lat:Number(t.destinationLat),lon:Number(t.destinationLon)}].filter(p=>Number.isFinite(p.lat)&&Number.isFinite(p.lon));if(pts[0])addMarker("detail-a",pts[0],"pickup");(t.stops||[]).forEach((s,i)=>addMarker(`detail-c-${i}`,{lat:Number(s.lat),lon:Number(s.lon)},"stop",i+1));if(pts.length>1)addMarker("detail-b",pts[pts.length-1],"destination");await drawRouteForPoints(pts,false);if(fit)fitPoints(pts);}
-function viewTripDetails(id){const t=dispatchTrips.find(x=>x.id===id);if(!t)return;detailTripId=id;$("#trip-details-panel").style.display="flex";$("#booking-form-content").style.display="none";$("#details-trip-id").textContent=t.id;$("#trip-details-content").innerHTML=`<div class="trip-detail-grid compact"><div><b>Fecha</b><span>${escapeHtml(fmtDate(t.createdAt))}</span></div><div><b>Estado</b><span>${escapeHtml(statusLabels[t.status]||t.status)}</span></div><div><b>Pasajero</b><span>${escapeHtml(t.passenger)}</span></div><div><b>Teléfono</b><span>${escapeHtml(t.phone)}</span></div><div><b>Conductor</b><span>${escapeHtml(t.driver)}</span></div><div><b>Vehículo</b><span>${escapeHtml(t.driverVehicle||"—")} ${escapeHtml(t.driverPlate||"")}</span></div><div><b>Recogida A</b><span>${escapeHtml(t.pickup)}</span></div><div><b>Destino B</b><span>${escapeHtml(t.destination)}</span></div>${(t.stops||[]).map((s,i)=>`<div><b>Parada C${i+1}</b><span>${escapeHtml(s.address)}</span></div>`).join("")}<div><b>Precio</b><span>${fmtPrice(t.priceDop)}</span></div><div><b>Distancia</b><span>${Number(t.distanceKm||0).toFixed(1)} km</span></div><div><b>Duración</b><span>${Number(t.durationMin||0)} min</span></div><div><b>Pago</b><span>${escapeHtml(t.paymentMethod||"—")}</span></div><div><b>Nota</b><span>${escapeHtml(t.note||"Sin nota")}</span></div></div><div class="detail-actions">${!["completed","cancelled"].includes(t.status)?`<button class="button button-danger" onclick="openCancelRide('${escapeHtml(t.id)}')">× Cancelar</button>`:""}${t.driverId?`<button class="button button-light" onclick="openEta('${escapeHtml(t.id)}')">⏱ Tiempo</button>`:""}${["accepted","driver_arriving"].includes(t.status)?`<button class="button button-primary" onclick="markArrived('${escapeHtml(t.id)}')">✓ Llegó</button>`:""}</div>`;showTripOnMap(id,true);}
+async function showTripOnMap(id,fit=true){
+  const t=dispatchTrips.find(x=>x.id===id);if(!t)return;clearSelectionMarkers();
+  const pts=[{address:t.pickup,lat:Number(t.pickupLat),lon:Number(t.pickupLon)},...(t.stops||[]).map(s=>({address:s.address,lat:Number(s.lat),lon:Number(s.lon)})),{address:t.destination,lat:Number(t.destinationLat),lon:Number(t.destinationLon)}].filter(p=>Number.isFinite(p.lat)&&Number.isFinite(p.lon));
+  if(pts[0])addMarker("detail-a",pts[0],"pickup");(t.stops||[]).forEach((s,i)=>addMarker(`detail-c-${i}`,{lat:Number(s.lat),lon:Number(s.lon)},"stop",i+1));if(pts.length>1)addMarker("detail-b",pts[pts.length-1],"destination");
+  await drawRouteForPoints(pts,false);if(fit)fitPoints(pts);
+}
+function viewTripDetails(id){
+  const t=dispatchTrips.find(x=>x.id===id);if(!t)return;detailTripId=id;$("#trip-details-panel").style.display="flex";$("#booking-form-content").style.display="none";$("#details-trip-id").textContent=t.id;
+  $("#trip-details-content").innerHTML=`<div class="trip-detail-grid compact"><div><b>Fecha</b><span>${escapeHtml(fmtDate(t.createdAt))}</span></div>${t.scheduledAt?`<div><b>Programado</b><span>${escapeHtml(fmtDate(t.scheduledAt))}</span></div>`:""}<div><b>Estado</b><span>${escapeHtml(t.status==="pending"?(t.driverId?"OFERTA":"NUEVO"):(statusLabels[t.status]||t.status))}</span></div><div><b>Pasajero</b><span>${escapeHtml(t.passenger)}</span></div><div><b>Teléfono</b><span>${escapeHtml(t.phone)}</span></div><div><b>Conductor</b><span>${escapeHtml(t.driver)}</span></div><div><b>Vehículo</b><span>${escapeHtml(t.driverVehicle||"—")} ${escapeHtml(t.driverPlate||"")}</span></div><div><b>Recogida A</b><span>${escapeHtml(t.pickup)}</span></div><div><b>Destino B</b><span>${escapeHtml(t.destination)}</span></div>${(t.stops||[]).map((s,i)=>`<div><b>Parada C${i+1}</b><span>${escapeHtml(s.address)}</span></div>`).join("")}<div><b>Precio</b><span>${fmtPrice(t.priceDop)}</span></div><div><b>Distancia</b><span>${Number(t.distanceKm||0).toFixed(1)} km</span></div><div><b>Duración</b><span>${Number(t.durationMin||0)} min</span></div><div><b>Pago</b><span>${escapeHtml(t.paymentMethod||"—")}</span></div><div><b>Nota</b><span>${escapeHtml(t.note||"Sin nota")}</span></div></div><div class="detail-actions">${!["completed","cancelled"].includes(t.status)?`<button class="button button-danger" onclick="openCancelRide('${escapeHtml(t.id)}')">× Cancelar</button>`:""}${t.driverId?`<button class="button button-light" onclick="openEta('${escapeHtml(t.id)}')">⏱ Tiempo</button>`:""}${["accepted","driver_arriving"].includes(t.status)?`<button class="button button-primary" onclick="markArrived('${escapeHtml(t.id)}')">✓ Llegó</button>`:""}</div>`;
+  showTripOnMap(id,true);
+}
 window.viewTripDetails=viewTripDetails;
 $("#close-trip-details")?.addEventListener("click",()=>{detailTripId="";$("#trip-details-panel").style.display="none";$("#booking-form-content").style.display="block";renderSelectionMarkers();calculateRoadRoute();});
 $("#trip-search")?.addEventListener("input",renderTrips);
+$$("[data-trip-filter-field]").forEach(el=>el.addEventListener("input",()=>{tripColumnFilters[el.dataset.tripFilterField]=el.value.trim();renderTrips();}));
+$$("[data-trip-filter-field]").forEach(el=>el.addEventListener("change",()=>{tripColumnFilters[el.dataset.tripFilterField]=el.value.trim();renderTrips();}));
+$("#clear-column-filters")?.addEventListener("click",()=>{$$("[data-trip-filter-field]").forEach(el=>el.value="");Object.keys(tripColumnFilters).forEach(k=>tripColumnFilters[k]="");$("#trip-search").value="";renderTrips();});
 $("#refresh-trips")?.addEventListener("click",loadDispatchTrips);
 $$("[data-trip-filter]").forEach(b=>b.addEventListener("click",()=>{tripFilter=b.dataset.tripFilter;$$("[data-trip-filter]").forEach(x=>x.classList.toggle("active",x===b));renderTrips();}));
 
@@ -360,7 +414,7 @@ bookingForm?.addEventListener("submit",async e=>{
   const customerStatus=await getCustomerStatus(phone,false);if(customerStatus?.activeRides?.length&&!await confirmDuplicateRide(customerStatus))return;
   try{const scheduledAt=scheduledValue(),stops=routeStops.filter(s=>s.location).map(s=>s.location);const est=await fetchJson("/api/rides/estimate",{method:"POST",body:{pickup:selectedLocations.pickup,destination:selectedLocations.destination,stops,passengerCount:Number($("#passenger-count-select").value||1)}}),estimate=est.estimate||{};
     pendingRidePayload={phone,name,pickup:selectedLocations.pickup,destination:selectedLocations.destination,stops,driverId:selectedDriverId||undefined,note:$("#dispatch-note").value,scheduledAt,passengerCount:Math.min(4,Math.max(1,Number($("#passenger-count-select").value||1))),paymentMethod:$("#payment-method-select").value};
-    $("#fare-modal-route").innerHTML=`<b>${escapeHtml(selectedLocations.pickup.address)}</b><span>→</span><b>${escapeHtml(selectedLocations.destination.address)}</b>`;$("#fare-modal-price").textContent=fmtPrice(estimate.priceDop);$("#fare-modal-distance").textContent=`${Number(estimate.distanceKm||0).toFixed(2)} km`;$("#fare-modal-duration").textContent=`${Number(estimate.durationMin||0)} min`;const fee=Number(estimate.passengerSurchargeDop||0);$("#fare-modal-distance").title=fee?`Incluye RD$${fee} por ${Number(estimate.passengerCount||1)} pasajeros`:"Sin cargo adicional por pasajeros";$("#fare-modal").hidden=false;
+    $("#fare-modal-route").innerHTML=`<b>${escapeHtml(selectedLocations.pickup.address)}</b><span>→</span><b>${escapeHtml(selectedLocations.destination.address)}</b>`;$("#fare-modal-price").textContent=fmtPrice(estimate.priceDop);$("#fare-modal-distance").textContent=`${Number(estimate.distanceKm||0).toFixed(2)} km`;$("#fare-modal-duration").textContent=`${Number(estimate.durationMin||0)} min`;const fee=Number(estimate.passengerSurchargeDop||0),stopFee=Number(estimate.stopSurchargeDop||0);$("#fare-modal-passengers").textContent=`Pasajeros +RD$${fee}`;$("#fare-modal-stops").textContent=`Paradas +RD$${stopFee}`;$("#fare-modal").hidden=false;
   }catch(err){showToast(err.message);}
 });
 $("#confirm-create-ride")?.addEventListener("click",async()=>{if(!pendingRidePayload)return;const b=$("#confirm-create-ride");b.disabled=true;try{suppressOwnRideSoundUntil=Date.now()+8000;const data=await fetchJson("/api/rides",{method:"POST",body:pendingRidePayload});$("#fare-modal").hidden=true;showToast(`Servicio ${data.ride?.id||""} enviado.`);pendingRidePayload=null;clearBookingForm();await Promise.all([loadDispatchTrips(),loadRecentPhones()]);}catch(e){showToast(e.message);}finally{b.disabled=false;}});

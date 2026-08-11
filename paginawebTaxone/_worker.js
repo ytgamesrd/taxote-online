@@ -139,7 +139,8 @@ async function ensureSchema(db) {
      "ALTER TABLE rides ADD COLUMN offer_after_at TEXT",
     "ALTER TABLE profiles ADD COLUMN debt_dop INTEGER NOT NULL DEFAULT 0",
     "ALTER TABLE rides ADD COLUMN fine_charged_dop INTEGER NOT NULL DEFAULT 0",
-    "ALTER TABLE rides ADD COLUMN driver_penalty_points INTEGER NOT NULL DEFAULT 0"
+    "ALTER TABLE rides ADD COLUMN driver_penalty_points INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE rides ADD COLUMN offer_round INTEGER NOT NULL DEFAULT 1"
   ];
   for (const sql of migrations) { try { await db.prepare(sql).run(); } catch {} }
   schemaReady = true;
@@ -347,10 +348,12 @@ async function estimateRoute(pickup, destination, stops = [], passengerCount = 1
   }
   const count=Math.min(4,Math.max(1,Math.floor(Number(passengerCount||1))));
   const passengerSurcharge=Math.max(0,(count-1)*50);
+  const stopCount=Math.min(3,Math.max(0,Array.isArray(stops)?stops.filter(Boolean).length:0));
+  const stopSurcharge=stopCount*50;
   const rawPrice = FARE_BASE_DOP + distanceKm * FARE_PER_KM_DOP;
   const routePrice = Math.max(FARE_MIN_DOP, Math.round(rawPrice / 50) * 50);
-  const priceDop = routePrice + passengerSurcharge;
-  return { distanceKm, durationMin, routePriceDop:routePrice, passengerSurchargeDop:passengerSurcharge, passengerCount:count, priceDop };
+  const priceDop = routePrice + passengerSurcharge + stopSurcharge;
+  return { distanceKm, durationMin, routePriceDop:routePrice, passengerSurchargeDop:passengerSurcharge, stopSurchargeDop:stopSurcharge, stopCount, passengerCount:count, priceDop };
 }
 async function resolveRideProfile(request, db, body) {
   const sessionProfile = await profileSession(request, db);
@@ -386,20 +389,40 @@ function messageView(row, driverName = "") {
 }
 
 
-async function nearestAvailableDriverForRide(db, ride, excludeDriverId = null) {
+function driverLooksSuv(d){
+  return /suv|sport utility|jeep|crossover/i.test(`${d.vehicle_type||""} ${d.vehicle_brand||""} ${d.vehicle_model||""}`);
+}
+async function nearestOfferDriverForRide(db,ride,{excludeDriverId=null,ignoreRejections=false}={}){
   const {results}=await db.prepare(`SELECT d.* FROM drivers d
-    WHERE d.status='active' AND d.is_online=1 AND d.is_available=1
+    WHERE d.status='active' AND d.is_online=1
       AND d.current_lat IS NOT NULL AND d.current_lon IS NOT NULL
       AND (? IS NULL OR d.id<>?)
-      AND NOT EXISTS(SELECT 1 FROM rides ar WHERE ar.driver_id=d.id AND ar.status IN ('accepted','driver_arriving','arrived','in_progress'))
-      AND NOT EXISTS(SELECT 1 FROM ride_rejections rr WHERE rr.ride_id=? AND rr.driver_id=d.id)`)
-    .bind(excludeDriverId,excludeDriverId,ride.id).all();
+    ORDER BY d.id`).bind(excludeDriverId,excludeDriverId).all();
+  const rejected=new Set();
+  if(!ignoreRejections){
+    const rr=await db.prepare("SELECT driver_id FROM ride_rejections WHERE ride_id=?").bind(ride.id).all();
+    (rr.results||[]).forEach(x=>rejected.add(Number(x.driver_id)));
+  }
   let best=null,bestKm=Infinity;
   for(const d of results||[]){
+    if(rejected.has(Number(d.id)))continue;
+    if(Number(ride.passenger_count||1)>=3 && !driverLooksSuv(d))continue;
     const km=haversineKm({lat:Number(ride.pickup_lat),lon:Number(ride.pickup_lon)},{lat:Number(d.current_lat),lon:Number(d.current_lon)});
     if(km<bestKm){best=d;bestKm=km;}
   }
   return best;
+}
+async function assignReadyUnassignedRides(db){
+  const now=nowIso();
+  const {results}=await db.prepare(`SELECT r.* FROM rides r
+    WHERE r.status='pending' AND r.driver_id IS NULL
+      AND (r.scheduled_at IS NULL OR r.scheduled_at<=?)
+      AND (r.offer_after_at IS NULL OR r.offer_after_at<=?)
+    ORDER BY COALESCE(r.scheduled_at,r.created_at) ASC LIMIT 12`).bind(now,now).all();
+  for(const ride of results||[]){
+    const next=await nearestOfferDriverForRide(db,ride);
+    if(next)await db.prepare("UPDATE rides SET driver_id=? WHERE id=? AND status='pending' AND driver_id IS NULL").bind(next.id,ride.id).run();
+  }
 }
 
 async function handleApi(request, env, url, headers) {
@@ -711,18 +734,20 @@ async function handleApi(request, env, url, headers) {
 
   if (path === "/api/driver/work" && method === "GET") {
     const d=await driverSession(request,db); if (!d) throw new HttpError(401,"Sesión expirada.");
+    await assignReadyUnassignedRides(db);
     const active=await db.prepare(`SELECT r.*,dr.public_id driver_public_id,dr.first_name,dr.last_name FROM rides r LEFT JOIN drivers dr ON dr.id=r.driver_id
       WHERE r.driver_id=? AND r.status IN ('accepted','driver_arriving','arrived','in_progress') ORDER BY r.created_at DESC LIMIT 1`).bind(d.id).first();
-    const suvEligible=/suv|sport utility|jeep|crossover/i.test(`${d.vehicle_type||""} ${d.vehicle_brand||""} ${d.vehicle_model||""}`)?1:0;
+    if(active){
+      return json({activeRide:await rideView(db,active,true),offers:[],queuedOffers:[]},200,headers);
+    }
     const {results:offers}=await db.prepare(`SELECT r.*,NULL driver_public_id,NULL first_name,NULL last_name FROM rides r
       WHERE r.status='pending'
+        AND r.driver_id=?
         AND (r.scheduled_at IS NULL OR r.scheduled_at<=?)
         AND (r.offer_after_at IS NULL OR r.offer_after_at<=?)
-        AND (r.driver_id IS NULL OR r.driver_id=?)
-        AND (r.driver_id IS NOT NULL OR r.passenger_count<=2 OR ?=1)
         AND NOT EXISTS(SELECT 1 FROM ride_rejections x WHERE x.ride_id=r.id AND x.driver_id=?)
-      ORDER BY COALESCE(r.scheduled_at,r.created_at) ASC LIMIT 5`).bind(nowIso(),nowIso(),d.id,suvEligible,d.id).all();
-    return json({activeRide:active?await rideView(db,active,true):null,offers:await Promise.all((offers||[]).map(r=>rideView(db,r,true))),queuedOffers:[]},200,headers);
+      ORDER BY COALESCE(r.scheduled_at,r.created_at) ASC LIMIT 5`).bind(d.id,nowIso(),nowIso(),d.id).all();
+    return json({activeRide:null,offers:await Promise.all((offers||[]).map(r=>rideView(db,r,true))),queuedOffers:[]},200,headers);
   }
 
   match=path.match(/^\/api\/driver\/rides\/([^/]+)\/(accept|reject|release|cancel|status|chat)$/);
@@ -740,11 +765,30 @@ async function handleApi(request, env, url, headers) {
       return json({ok:true,ride:await rideView(db,updated,true)},200,headers);
     }
     if (action==="reject" && method==="POST") {
+      if(row.status!=="pending" || (row.driver_id && row.driver_id!==d.id)) throw new HttpError(409,"Esta oferta ya no está asignada a tu cuenta.");
       await db.prepare("INSERT OR IGNORE INTO ride_rejections(ride_id,driver_id,created_at) VALUES(?,?,?)").bind(row.id,d.id,nowIso()).run();
-      const next=await nearestAvailableDriverForRide(db,row,d.id);
-      await db.prepare("UPDATE rides SET driver_id=? WHERE id=? AND status='pending'").bind(next?.id||null,row.id).run();
-      await notify(db,"ride_offer","Servicio reasignado",next?`${row.public_id} fue enviado automáticamente a ${next.first_name} ${next.last_name}.`:`${row.public_id} quedó sin conductor disponible.`,"ride",row.public_id);
-      return json({ok:true,reassignedTo:next?.public_id||null},200,headers);
+      let round=Math.max(1,Number(row.offer_round||1));
+      let next=await nearestOfferDriverForRide(db,row);
+      if(!next && round<2){
+        round=2;
+        await db.prepare("DELETE FROM ride_rejections WHERE ride_id=?").bind(row.id).run();
+        next=await nearestOfferDriverForRide(db,row,{ignoreRejections:true});
+        if(next){
+          await db.prepare("UPDATE rides SET driver_id=?,offer_round=2 WHERE id=? AND status='pending'").bind(next.id,row.id).run();
+          await notify(db,"ride_offer","Segunda ronda de búsqueda",`${row.public_id} inicia la segunda ronda desde el conductor más cercano.`,"ride",row.public_id);
+          return json({ok:true,reassignedTo:next.public_id,round:2},200,headers);
+        }
+      }
+      if(!next && round>=2){
+        const stamp=nowIso();
+        await db.prepare("UPDATE rides SET status='cancelled',driver_id=NULL,cancelled_at=?,closed_at=?,cancellation_reason=?,cancelled_by='system' WHERE id=? AND status='pending'")
+          .bind(stamp,stamp,"Todos los conductores rechazaron la oferta en dos rondas.",row.id).run();
+        await notify(db,"ride_cancelled","Servicio cancelado automáticamente",`${row.public_id}: todos los conductores rechazaron dos rondas. Sin multa ni descuento de puntos.`,"ride",row.public_id);
+        return json({ok:true,autoCancelled:true,round:2},200,headers);
+      }
+      await db.prepare("UPDATE rides SET driver_id=?,offer_round=? WHERE id=? AND status='pending'").bind(next?.id||null,round,row.id).run();
+      await notify(db,"ride_offer","Servicio reasignado",next?`${row.public_id} fue enviado al siguiente conductor más cercano: ${next.first_name} ${next.last_name}.`:`${row.public_id} quedó esperando conductor.`,"ride",row.public_id);
+      return json({ok:true,reassignedTo:next?.public_id||null,round},200,headers);
     }
     if (action==="release" && method==="POST") {
       if (row.driver_id===d.id && row.status==="pending") await db.prepare("UPDATE rides SET driver_id=NULL WHERE id=?").bind(row.id).run();

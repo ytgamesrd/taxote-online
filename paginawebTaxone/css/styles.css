@@ -721,3 +721,31 @@ body{color:#17384d}.booking-panel,.drivers-panel,.active-trips-section{font-size
 .trip-table-wrap table{min-width:1180px!important}
 .trip-horizontal-controls{position:sticky!important;bottom:0!important;background:#fff!important;padding:7px 12px!important;border-top:1px solid #e3eaee!important}
 .recent-phone-chips{display:flex!important;gap:5px!important;overflow-x:auto!important;max-width:100%!important;padding:5px 0 2px!important;scrollbar-width:thin!important}.recent-phone-chips button{flex:0 0 auto!important;border:1px solid #d5e1e7!important;border-radius:999px!important;background:#fff!important;color:#294b5e!important;padding:5px 8px!important;font-size:9px!important;cursor:pointer!important}.recent-phone-chips button:hover{background:#fff3b0!important;border-color:#f4c400!important}
+
+/* ===== TAXOTE V7 ===== */
+#active-trips.trips-section{padding-bottom:150px!important;margin-bottom:20px!important}
+#active-trips .trip-table-shell{min-height:220px!important;padding-bottom:38px!important}
+#active-trips .trip-table-wrap{max-height:620px!important;padding-bottom:55px!important;overscroll-behavior:contain!important;scrollbar-gutter:stable both-edges!important}
+#trip-table-body tr:last-child td{padding-bottom:26px!important}
+.chat-floating-container{bottom:24px!important}
+
+#schedule-fields{gap:9px!important;padding:8px!important;border:1px solid #dbe5ea!important;border-radius:8px!important;background:#f8fafb!important}
+#schedule-fields input[type="date"],#schedule-fields input[type="time"]{color:#17384d!important;background:#fff!important;font-weight:700!important;opacity:1!important;color-scheme:light!important}
+
+/* X estable para quitar A/B/C */
+.taxote-marker-shell{width:66px!important;height:38px!important;pointer-events:auto!important}
+.marker-remove{display:grid!important;z-index:20!important;pointer-events:auto!important;left:34px!important;top:0!important}
+.taxote-marker-shell:hover .marker-remove,.marker-remove:hover,.marker-remove:focus-visible{display:grid!important}
+
+/* Popup del conductor en el mapa */
+.driver-map-popup{display:grid!important;grid-template-columns:58px minmax(0,1fr)!important;gap:10px!important;align-items:center!important;min-width:205px!important;padding:4px!important}
+.driver-map-popup img{width:58px!important;height:58px!important;object-fit:cover!important;border-radius:10px!important;border:2px solid #e5edf0!important;background:#eef3f5!important}
+.driver-map-popup b,.driver-map-popup small,.driver-map-popup span{display:block!important}
+.driver-map-popup b{font-size:12px!important;color:#0b2e47!important}.driver-map-popup small{margin-top:3px!important;font-size:9px!important;color:#657e8b!important}.driver-map-popup span{margin-top:5px!important;font-size:9px!important;font-weight:800!important;color:#218348!important}
+
+/* Filtros detallados de Viajes activos */
+.trip-filter-row th{padding:6px!important;background:#eef4f7!important}
+.trip-filter-row input,.trip-filter-row select{width:100%!important;min-width:88px!important;height:30px!important;padding:0 7px!important;border:1px solid #c8d5dc!important;border-radius:4px!important;color:#29485c!important;background:#fff!important;font-size:9px!important}
+.mini-clear-filter{width:100%!important;min-height:30px!important;border:1px solid #d1dde3!important;border-radius:5px!important;background:#fff!important;color:#0b2e47!important;font-size:9px!important;font-weight:800!important;cursor:pointer!important}
+.mini-clear-filter:hover{background:#f4c400!important;border-color:#f4c400!important}
+.status-pending{white-space:nowrap!important}

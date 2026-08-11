@@ -103,7 +103,7 @@
 
             <div id="schedule-fields" class="form-grid two-cols" hidden>
               <label class="field"><span>Fecha</span><input id="schedule-date" type="date" /></label>
-              <label class="field"><span>Hora</span><input id="schedule-time" type="time" /></label>
+              <label class="field"><span>Hora</span><input id="schedule-time" type="time" step="300" autocomplete="off" /></label>
             </div>
 
             <div class="customer-row customer-picker-wrap">
@@ -162,8 +162,8 @@
 
             <div class="form-grid three-cols compact-fields">
               <label class="field select-field"><span>Pasajeros</span><select id="passenger-count-select"><option value="1">1 pasajero</option><option value="2">2 pasajeros (+RD$50)</option><option value="3">3 pasajeros (+RD$100 · SUV automático)</option><option value="4">4 pasajeros (+RD$150 · SUV automático)</option></select></label>
-              <label class="field select-field"><span>Paradas</span><select id="stop-count-select"><option value="0">Sin paradas</option><option value="1">1 parada</option><option value="2">2 paradas</option><option value="3">3 paradas</option></select></label>
-              <label class="field select-field"><span>Pago</span><select id="payment-method-select"><option>Efectivo</option><option>Tarjeta</option><option>Cuenta empresa</option></select></label>
+              <label class="field select-field"><span>Paradas</span><select id="stop-count-select"><option value="0">Sin paradas</option><option value="1">1 parada (+RD$50)</option><option value="2">2 paradas (+RD$100)</option><option value="3">3 paradas (+RD$150)</option></select></label>
+              <label class="field select-field"><span>Pago</span><select id="payment-method-select"><option value="Efectivo">Pago efectivo</option><option value="Transferencia">Transferencia</option></select></label>
             </div>
 
             <div class="form-actions">
@@ -219,6 +219,18 @@
         <table>
           <thead>
             <tr class="trip-column-headings"><th>Acción</th><th>Viaje</th><th>Estado</th><th>Pasajero</th><th>Teléfono</th><th>Conductor</th><th>Contactado</th><th>Recogida</th><th>Destino</th><th>Hora</th></tr>
+            <tr class="trip-filter-row">
+              <th><button id="clear-column-filters" type="button" class="mini-clear-filter">Limpiar</button></th>
+              <th><input data-trip-filter-field="id" type="search" placeholder="ID viaje"></th>
+              <th><select data-trip-filter-field="status"><option value="">Todos</option><option value="new_unassigned">NUEVO sin driver</option><option value="pending">NUEVO / oferta</option><option value="accepted">Aceptado</option><option value="driver_arriving">En camino</option><option value="arrived">Llegó</option><option value="in_progress">En viaje</option></select></th>
+              <th><input data-trip-filter-field="passenger" type="search" placeholder="Cliente"></th>
+              <th><input data-trip-filter-field="phone" type="search" placeholder="Teléfono"></th>
+              <th><input data-trip-filter-field="driver" type="search" placeholder="Driver"></th>
+              <th><select data-trip-filter-field="contacted"><option value="">Todos</option><option value="yes">Sí</option><option value="no">No</option></select></th>
+              <th><input data-trip-filter-field="pickup" type="search" placeholder="Dirección A"></th>
+              <th><input data-trip-filter-field="destination" type="search" placeholder="Dirección B/C"></th>
+              <th></th>
+            </tr>
           </thead>
           <tbody id="trip-table-body"></tbody>
         </table>
@@ -287,7 +299,7 @@
     </div>
     <div id="cancel-ride-modal" class="taxote-modal" hidden><div class="taxote-modal-card cancel-card"><button class="modal-x" type="button" data-close-modal="cancel-ride-modal">×</button><span class="modal-kicker">CANCELAR SERVICIO</span><h2 id="cancel-ride-title">Seleccionar motivo</h2><div class="cancel-actor-tabs"><button type="button" class="cancel-actor active" data-cancel-actor="dispatcher">Dispatcher</button><button type="button" class="cancel-actor" data-cancel-actor="driver">Conductor</button><button type="button" class="cancel-actor" data-cancel-actor="passenger">Pasajero</button></div><div id="cancel-reasons" class="cancel-reasons"></div><label class="copy-ride-option"><input id="cancel-copy-ride" type="checkbox"> <span>Copiar este viaje al formulario para poder enviarlo nuevamente</span></label><label class="cancel-note-label">Nota opcional<textarea id="cancel-note" placeholder="Información adicional…"></textarea></label><div class="modal-actions"><button type="button" class="button button-light" data-close-modal="cancel-ride-modal">← Atrás</button><button id="confirm-cancel-ride" type="button" class="button button-danger">✕ Cancelar servicio</button></div></div></div>
     <div id="eta-modal" class="taxote-modal" hidden><div class="taxote-modal-card eta-card"><button class="modal-x" type="button" data-close-modal="eta-modal">×</button><span class="modal-kicker">TIEMPO EN TIEMPO REAL</span><h2>Tiempo de llegada del conductor</h2><div class="eta-clock">⏱ <b id="eta-live">Calculando…</b></div><p id="eta-driver-name"></p><small id="eta-updated">Se actualizará automáticamente.</small></div></div>
-    <div id="fare-modal" class="taxote-modal" hidden><div class="taxote-modal-card fare-card"><button class="modal-x" type="button" data-close-modal="fare-modal">×</button><span class="modal-kicker">ESTIMACIÓN DE TARIFA</span><h2>Confirma el servicio</h2><div id="fare-modal-route" class="fare-route"></div><div class="fare-total"><span>Total estimado</span><b id="fare-modal-price">RD$ 0</b></div><div class="fare-meta"><span id="fare-modal-distance">0 km</span><span id="fare-modal-duration">0 min</span><span>RD$21/km + base</span></div><div class="modal-actions"><button type="button" class="button button-light" data-close-modal="fare-modal">Cancelar</button><button id="confirm-create-ride" type="button" class="button button-primary">Enviar servicio</button></div></div></div>
+    <div id="fare-modal" class="taxote-modal" hidden><div class="taxote-modal-card fare-card"><button class="modal-x" type="button" data-close-modal="fare-modal">×</button><span class="modal-kicker">ESTIMACIÓN DE TARIFA</span><h2>Confirma el servicio</h2><div id="fare-modal-route" class="fare-route"></div><div class="fare-total"><span>Total estimado</span><b id="fare-modal-price">RD$ 0</b></div><div class="fare-meta"><span id="fare-modal-distance">0 km</span><span id="fare-modal-duration">0 min</span><span id="fare-modal-passengers">Pasajeros +RD$0</span><span id="fare-modal-stops">Paradas +RD$0</span><span>RD$21/km + base</span></div><div class="modal-actions"><button type="button" class="button button-light" data-close-modal="fare-modal">Cancelar</button><button id="confirm-create-ride" type="button" class="button button-primary">Enviar servicio</button></div></div></div>
     <div id="driver-chat-modal" class="taxote-modal" hidden><div class="taxote-modal-card driver-chat-card"><button class="modal-x" type="button" data-close-modal="driver-chat-modal">×</button><span class="modal-kicker">MENSAJE PRIVADO</span><h2 id="driver-chat-name">Conductor</h2><div id="driver-chat-history" class="driver-chat-history"></div><form id="driver-quick-chat-form"><textarea id="driver-quick-chat-input" maxlength="1000" placeholder="Escribe un mensaje al conductor…"></textarea><button class="button button-primary" type="submit">Enviar</button></form></div></div>
     <div id="toast" class="toast"></div>
     <script>
