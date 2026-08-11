@@ -44,7 +44,7 @@ function timeLabel(value) { return value ? new Date(value).toLocaleString("es-DO
 
 function renderConversations() {
   const query = $("#conversation-search").value.trim().toLocaleLowerCase("es");
-  const visible = conversations.filter((item) => !query || `${item.driver.name} ${item.driver.phone} ${item.driver.vehicleBrand} ${item.driver.vehicleModel}`.toLocaleLowerCase("es").includes(query));
+  const visible = [...conversations].sort((a,b)=>new Date(b.latestMessage?.createdAt||0)-new Date(a.latestMessage?.createdAt||0)).filter((item) => !query || `${item.driver.name} ${item.driver.phone} ${item.driver.vehicleBrand} ${item.driver.vehicleModel}`.toLocaleLowerCase("es").includes(query));
   $("#conversation-empty").hidden = visible.length !== 0;
   $("#conversation-list").innerHTML = visible.map((item) => `
     <button class="conversation-card ${selectedDriverId === item.driver.id ? "active" : ""}" type="button" data-driver-id="${escapeHtml(item.driver.id)}">
@@ -72,7 +72,7 @@ async function selectPrivate(driverId) {
   if (!item) return;
   selectedChannel = "private";
   selectedDriverId = driverId;
-  $("#public-conversation").classList.remove("active");
+  $("#public-conversation")?.classList.remove("active");
   $("#current-avatar").textContent = initials(item.driver);
   $("#current-kicker").textContent = "CONVERSACIÓN PRIVADA";
   $("#current-name").textContent = "Conversar con " + item.driver.name;

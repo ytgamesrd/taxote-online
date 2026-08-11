@@ -63,11 +63,13 @@
         <a href="/"><span>＋</span> Nueva reserva</a>
         <a href="/drivers.html"><span>♙</span> Conductores</a>
         <a href="/deposits.html"><span>💰</span> Depósitos</a>
+        <a href="/wallet.html"><span>◈</span> Billetera</a>
         <a href="/history.html"><span>◷</span> Historial de viajes</a>
         <a href="/drivers-chat.html"><span>▤</span> Chat de conductores</a>
         <a href="/conversation-history.html"><span>▧</span> Historial de conversación</a>
         <a href="/reports.html"><span>▦</span> Reportes</a>
         <hr style="border: 0; border-top: 1px solid #eee; margin: 10px 0;">
+        <a href="#" id="open-security"><span>🛡</span> Sesiones y seguridad</a>
         <a href="#" onclick="adminLogout()" style="color:#df5050"><span>×</span> Cerrar sesión</a>
       </nav>
       <div id="admin-session-info" class="admin-session-info"><b>Sesión administrativa</b><span>Cargando información…</span></div><div class="side-menu-footer"><p><b>Administrador</b><small>Operaciones TAXOTE</small></p></div>
@@ -256,13 +258,34 @@
             <div class="welcome-msg">Conversaciones privadas con conductores.<br>Selecciona un conductor para escribirle.</div>
         </div>
         <div class="chat-footer">
-            <input type="text" id="internal-chat-input" placeholder="¿En qué podemos ayudarte?">
+            <input type="text" id="internal-chat-input" placeholder="Escribe un mensaje al conductor…">
             <button id="send-internal-chat">➤</button>
         </div>
     </div>
 
 
-    <div id="cancel-ride-modal" class="taxote-modal" hidden><div class="taxote-modal-card cancel-card"><button class="modal-x" type="button" data-close-modal="cancel-ride-modal">×</button><span class="modal-kicker">CANCELAR SERVICIO</span><h2 id="cancel-ride-title">Seleccionar motivo</h2><div class="cancel-actor-tabs"><button type="button" class="cancel-actor active" data-cancel-actor="dispatcher">Dispatcher</button><button type="button" class="cancel-actor" data-cancel-actor="driver">Conductor</button><button type="button" class="cancel-actor" data-cancel-actor="passenger">Pasajero</button></div><div id="cancel-reasons" class="cancel-reasons"></div><label class="cancel-note-label">Nota opcional<textarea id="cancel-note" placeholder="Información adicional…"></textarea></label><div class="modal-actions"><button type="button" class="button button-light" data-close-modal="cancel-ride-modal">← Atrás</button><button id="confirm-cancel-ride" type="button" class="button button-danger">✕ Cancelar servicio</button></div></div></div>
+
+    <div id="customer-status-modal" class="taxote-modal" hidden>
+      <div class="taxote-modal-card customer-status-card"><button class="modal-x" type="button" data-close-modal="customer-status-modal">×</button>
+        <span class="modal-kicker">INFORMACIÓN DEL CLIENTE</span><h2 id="customer-status-title">Estado del cliente</h2>
+        <div id="customer-status-content" class="customer-status-content"></div>
+        <div class="modal-actions"><button type="button" class="button button-primary" data-close-modal="customer-status-modal">Aceptar</button></div>
+      </div>
+    </div>
+    <div id="duplicate-ride-modal" class="taxote-modal" hidden>
+      <div class="taxote-modal-card"><button class="modal-x" id="duplicate-x" type="button">×</button>
+        <span class="modal-kicker">SERVICIO ACTIVO</span><h2>Este cliente ya tiene un servicio activo</h2>
+        <p id="duplicate-ride-text">¿Deseas enviar otro servicio de todos modos?</p>
+        <div class="modal-actions"><button type="button" class="button button-light" id="duplicate-no">No</button><button type="button" class="button button-primary" id="duplicate-yes">Sí, continuar</button></div>
+      </div>
+    </div>
+    <div id="security-modal" class="taxote-modal" hidden>
+      <div class="taxote-modal-card security-card"><button class="modal-x" type="button" data-close-modal="security-modal">×</button>
+        <span class="modal-kicker">SEGURIDAD ADMINISTRATIVA</span><h2>Sesiones e intentos de acceso</h2>
+        <div id="security-sessions" class="security-list"></div><h3>Intentos recientes</h3><div id="security-events" class="security-list"></div>
+      </div>
+    </div>
+    <div id="cancel-ride-modal" class="taxote-modal" hidden><div class="taxote-modal-card cancel-card"><button class="modal-x" type="button" data-close-modal="cancel-ride-modal">×</button><span class="modal-kicker">CANCELAR SERVICIO</span><h2 id="cancel-ride-title">Seleccionar motivo</h2><div class="cancel-actor-tabs"><button type="button" class="cancel-actor active" data-cancel-actor="dispatcher">Dispatcher</button><button type="button" class="cancel-actor" data-cancel-actor="driver">Conductor</button><button type="button" class="cancel-actor" data-cancel-actor="passenger">Pasajero</button></div><div id="cancel-reasons" class="cancel-reasons"></div><label class="copy-ride-option"><input id="cancel-copy-ride" type="checkbox"> <span>Copiar este viaje al formulario para poder enviarlo nuevamente</span></label><label class="cancel-note-label">Nota opcional<textarea id="cancel-note" placeholder="Información adicional…"></textarea></label><div class="modal-actions"><button type="button" class="button button-light" data-close-modal="cancel-ride-modal">← Atrás</button><button id="confirm-cancel-ride" type="button" class="button button-danger">✕ Cancelar servicio</button></div></div></div>
     <div id="eta-modal" class="taxote-modal" hidden><div class="taxote-modal-card eta-card"><button class="modal-x" type="button" data-close-modal="eta-modal">×</button><span class="modal-kicker">TIEMPO EN TIEMPO REAL</span><h2>Tiempo de llegada del conductor</h2><div class="eta-clock">⏱ <b id="eta-live">Calculando…</b></div><p id="eta-driver-name"></p><small id="eta-updated">Se actualizará automáticamente.</small></div></div>
     <div id="fare-modal" class="taxote-modal" hidden><div class="taxote-modal-card fare-card"><button class="modal-x" type="button" data-close-modal="fare-modal">×</button><span class="modal-kicker">ESTIMACIÓN DE TARIFA</span><h2>Confirma el servicio</h2><div id="fare-modal-route" class="fare-route"></div><div class="fare-total"><span>Total estimado</span><b id="fare-modal-price">RD$ 0</b></div><div class="fare-meta"><span id="fare-modal-distance">0 km</span><span id="fare-modal-duration">0 min</span><span>RD$21/km + base</span></div><div class="modal-actions"><button type="button" class="button button-light" data-close-modal="fare-modal">Cancelar</button><button id="confirm-create-ride" type="button" class="button button-primary">Enviar servicio</button></div></div></div>
     <div id="driver-chat-modal" class="taxote-modal" hidden><div class="taxote-modal-card driver-chat-card"><button class="modal-x" type="button" data-close-modal="driver-chat-modal">×</button><span class="modal-kicker">MENSAJE PRIVADO</span><h2 id="driver-chat-name">Conductor</h2><div id="driver-chat-history" class="driver-chat-history"></div><form id="driver-quick-chat-form"><textarea id="driver-quick-chat-input" maxlength="1000" placeholder="Escribe un mensaje al conductor…"></textarea><button class="button button-primary" type="submit">Enviar</button></form></div></div>

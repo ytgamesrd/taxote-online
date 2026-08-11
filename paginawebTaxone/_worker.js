@@ -22,6 +22,8 @@ const CORE_SCHEMA = [
   `CREATE TABLE IF NOT EXISTS ride_rejections (id INTEGER PRIMARY KEY AUTOINCREMENT, ride_id INTEGER NOT NULL, driver_id INTEGER NOT NULL, created_at TEXT NOT NULL, UNIQUE(ride_id,driver_id))`,
   `CREATE TABLE IF NOT EXISTS driver_deposits (id INTEGER PRIMARY KEY AUTOINCREMENT, driver_id INTEGER NOT NULL, points_requested INTEGER NOT NULL, amount_dop INTEGER NOT NULL, proof_data TEXT, status TEXT NOT NULL DEFAULT 'pending', created_at TEXT NOT NULL, updated_at TEXT NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS admin_notifications (id INTEGER PRIMARY KEY AUTOINCREMENT, kind TEXT NOT NULL, title TEXT NOT NULL, body TEXT NOT NULL, entity_type TEXT, entity_id TEXT, created_at TEXT NOT NULL, read_at TEXT)`,
+  `CREATE TABLE IF NOT EXISTS driver_points_audit (id INTEGER PRIMARY KEY AUTOINCREMENT, driver_id INTEGER NOT NULL, old_points INTEGER NOT NULL, new_points INTEGER NOT NULL, delta INTEGER NOT NULL, reason TEXT NOT NULL, source TEXT NOT NULL, ride_id INTEGER, created_at TEXT NOT NULL)`,
+  `CREATE TABLE IF NOT EXISTS admin_login_attempts (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT, ip_address TEXT, user_agent TEXT, country TEXT, city TEXT, successful INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS chat_messages (id INTEGER PRIMARY KEY AUTOINCREMENT, channel TEXT NOT NULL, driver_id INTEGER, ride_id INTEGER, sender TEXT NOT NULL, message TEXT, photo_data TEXT, created_at TEXT NOT NULL, admin_read_at TEXT, driver_read_at TEXT, passenger_read_at TEXT)`,
   `CREATE TABLE IF NOT EXISTS internal_chat_messages (id INTEGER PRIMARY KEY AUTOINCREMENT, conversation_id TEXT NOT NULL, sender TEXT NOT NULL, message TEXT NOT NULL, created_at TEXT NOT NULL, read_at TEXT, photo_data TEXT)`,
   `CREATE TABLE IF NOT EXISTS reports (id INTEGER PRIMARY KEY AUTOINCREMENT, public_id TEXT NOT NULL UNIQUE, reporter_type TEXT NOT NULL, reporter_id TEXT, reporter_name TEXT NOT NULL, ride_id TEXT, category TEXT NOT NULL, description TEXT NOT NULL, photo_data TEXT, status TEXT NOT NULL DEFAULT 'new', created_at TEXT NOT NULL, updated_at TEXT NOT NULL, read_at TEXT, resolved_at TEXT)`,
@@ -134,7 +136,10 @@ async function ensureSchema(db) {
     "ALTER TABLE admin_sessions ADD COLUMN user_agent TEXT",
     "ALTER TABLE admin_sessions ADD COLUMN country TEXT",
     "ALTER TABLE admin_sessions ADD COLUMN city TEXT",
-    "ALTER TABLE rides ADD COLUMN offer_after_at TEXT"
+     "ALTER TABLE rides ADD COLUMN offer_after_at TEXT",
+    "ALTER TABLE profiles ADD COLUMN debt_dop INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE rides ADD COLUMN fine_charged_dop INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE rides ADD COLUMN driver_penalty_points INTEGER NOT NULL DEFAULT 0"
   ];
   for (const sql of migrations) { try { await db.prepare(sql).run(); } catch {} }
   schemaReady = true;
@@ -175,7 +180,17 @@ async function adminLogin(request, env, headers) {
   const body = await bodyJson(request);
   const expectedUser = env.ADMIN_USERNAME || ADMIN_USERNAME_FALLBACK;
   const expectedPass = env.ADMIN_PASSWORD || ADMIN_PASSWORD_FALLBACK;
-  if (clean(body.username) !== expectedUser || String(body.password || "") !== expectedPass) throw new HttpError(401, "Admin incorrecto.");
+  const loginIp = request.headers.get("CF-Connecting-IP") || request.headers.get("X-Forwarded-For") || "";
+  const loginUa = request.headers.get("User-Agent") || "";
+  const loginCountry = request.cf?.country || request.headers.get("CF-IPCountry") || "";
+  const loginCity = request.cf?.city || "";
+  const valid = clean(body.username) === expectedUser && String(body.password || "") === expectedPass;
+  await db.prepare("INSERT INTO admin_login_attempts(username,ip_address,user_agent,country,city,successful,created_at) VALUES(?,?,?,?,?,?,?)")
+    .bind(clean(body.username),loginIp,loginUa,loginCountry,loginCity,valid?1:0,nowIso()).run();
+  if (!valid) {
+    await notify(db,"security","Intento de acceso administrativo",`Intento fallido desde IP ${loginIp||"desconocida"}${loginCity?` · ${loginCity}`:""}.`,"security",loginIp||"unknown");
+    throw new HttpError(401, "Admin incorrecto.");
+  }
 
   const token = crypto.randomUUID().replaceAll("-", "") + crypto.randomUUID().replaceAll("-", "");
   const expiresAt = new Date(Date.now() + SESSION_DAYS * 86400000).toISOString();
@@ -186,6 +201,7 @@ async function adminLogin(request, env, headers) {
   const city = request.cf?.city || "";
   await db.prepare("INSERT INTO admin_sessions(token_hash,username,expires_at,created_at,ip_address,user_agent,country,city) VALUES(?,?,?,?,?,?,?,?)")
     .bind(await sha256(token), expectedUser, expiresAt, nowIso(), ip, ua, country, city).run();
+  await notify(db,"security","Inicio de sesión administrativo",`Sesión iniciada desde IP ${ip||"desconocida"}${city?` · ${city}`:""}.`,"security",ip||"unknown");
   return json({ ok: true }, 200, {
     "Set-Cookie": `taxote_admin_session=${token}; Path=/; Secure; SameSite=Lax; HttpOnly; Max-Age=${SESSION_DAYS * 86400}`,
     ...headers
@@ -204,7 +220,7 @@ async function notify(db, kind, title, body, entityType = null, entityId = null)
     .bind(kind, title, body, entityType, entityId, nowIso()).run();
 }
 function profileView(row) {
-  return { id: row.public_id, name: row.name, phone: row.phone, email: row.email || "", kind: row.kind };
+  return { id: row.public_id, name: row.name, phone: row.phone, email: row.email || "", kind: row.kind, debtDop: Number(row.debt_dop || 0) };
 }
 function driverView(row, detailed = false) {
   const view = {
@@ -282,6 +298,8 @@ async function rideView(db, row, forDriver = false) {
     cancellationReason: row.cancellation_reason || "",
     cancellationNote: row.cancellation_note || "",
     cancelledBy: row.cancelled_by || "",
+    fineChargedDop: Number(row.fine_charged_dop || 0),
+    driverPenaltyPoints: Number(row.driver_penalty_points || 0),
     stops: stops.map(s => ({ address: s.address, lat: Number(s.lat), lon: Number(s.lon), position: Number(s.position) }))
   };
   if (forDriver) {
@@ -664,9 +682,13 @@ async function handleApi(request, env, url, headers) {
   if (path === "/api/driver/location" && method === "POST") {
     const d=await driverSession(request,db); if (!d) throw new HttpError(401,"Sesión expirada.");
     const body=await bodyJson(request),stamp=nowIso();
+    const reportedPoints=body.pointsBalance ?? body.points;
+    if(reportedPoints!==undefined && Number(reportedPoints)!==Number(d.points_balance||0)){
+      await notify(db,"points_alert","Posible manipulación de puntos",`${d.first_name} ${d.last_name} reportó ${Number(reportedPoints)} puntos, pero el servidor conserva ${Number(d.points_balance||0)}. El saldo NO fue modificado.`,"driver",d.public_id);
+    }
     await db.prepare("UPDATE drivers SET current_lat=?,current_lon=?,current_accuracy=?,current_bearing=?,current_speed_kph=?,last_seen_at=?,is_online=1,is_available=1,updated_at=? WHERE id=?")
       .bind(Number(body.lat),Number(body.lon),Number(body.accuracy||0),Number(body.bearing||0),Number(body.speedKph||body.speed||0),stamp,stamp,d.id).run();
-    return json({ok:true},200,headers);
+    return json({ok:true,pointsBalance:Number(d.points_balance||0)},200,headers);
   }
 
   if (path === "/api/driver/fcm-token" && method === "POST") {
@@ -734,7 +756,13 @@ async function handleApi(request, env, url, headers) {
       const stamp=nowIso();
       if (wanted==="arrived") await db.prepare("UPDATE rides SET status='arrived',arrived_at=? WHERE id=?").bind(stamp,row.id).run();
       if (wanted==="start") await db.prepare("UPDATE rides SET status='in_progress',started_at=? WHERE id=?").bind(stamp,row.id).run();
-      if (wanted==="complete") await db.prepare("UPDATE rides SET status='completed',completed_at=?,closed_at=?,driver_earnings_dop=? WHERE id=?").bind(stamp,stamp,Math.round(Number(row.price_dop||0)*0.8),row.id).run();
+      if (wanted==="complete") {
+        const profile=await db.prepare("SELECT debt_dop FROM profiles WHERE id=?").bind(row.profile_id).first();
+        const fineCharge=Math.min(50,Math.max(0,Number(profile?.debt_dop||0)));
+        if(fineCharge>0) await db.prepare("UPDATE profiles SET debt_dop=MAX(0,debt_dop-?),updated_at=? WHERE id=?").bind(fineCharge,stamp,row.profile_id).run();
+        await db.prepare("UPDATE rides SET status='completed',completed_at=?,closed_at=?,fine_charged_dop=?,price_dop=price_dop+?,driver_earnings_dop=? WHERE id=?")
+          .bind(stamp,stamp,fineCharge,fineCharge,Math.round(Number(row.price_dop||0)*0.8),row.id).run();
+      }
       const updated=await rideRowByPublicId(db,publicId);
       return json({ok:true,ride:await rideView(db,updated,true)},200,headers);
     }
@@ -790,6 +818,13 @@ async function handleApi(request, env, url, headers) {
     return json({unreadCount:Number(p?.n||0)+Number(r?.n||0)},200,headers);
   }
 
+
+  if (path === "/api/driver/points/set" && method === "POST") {
+    const d=await driverSession(request,db); if(!d) throw new HttpError(401,"Sesión expirada.");
+    await notify(db,"points_alert","Intento de modificar puntos",`${d.first_name} ${d.last_name} intentó modificar el saldo de puntos desde TAXOTE Driver. El saldo del servidor NO cambió.`,"driver",d.public_id);
+    throw new HttpError(403,"El saldo de puntos solo puede cambiarse desde la Central.");
+  }
+
   if (path === "/api/driver/points/deposit" && method === "POST") {
     const d=await driverSession(request,db); if (!d) throw new HttpError(401,"Sesión expirada.");
     const body=await bodyJson(request),points=Math.max(1,Number(body.points||0)),amount=Math.max(0,Number(body.amount||points*50)),stamp=nowIso();
@@ -827,6 +862,25 @@ async function handleApi(request, env, url, headers) {
     const row=await db.prepare("SELECT username,created_at,expires_at,ip_address,user_agent,country,city FROM admin_sessions WHERE token_hash=?").bind(await sha256(token)).first();
     if(!row) throw new HttpError(401,"Sesión expirada.");
     return json({username:row.username,loginAt:row.created_at,expiresAt:row.expires_at,ip:row.ip_address||"",browser:row.user_agent||"",country:row.country||"",city:row.city||""},200,headers);
+  }
+
+
+  if (path === "/api/admin/sessions" && method === "GET") {
+    const currentToken=parseCookies(request).taxote_admin_session, currentHash=currentToken?await sha256(currentToken):"";
+    await db.prepare("DELETE FROM admin_sessions WHERE expires_at<=?").bind(nowIso()).run();
+    const {results}=await db.prepare("SELECT token_hash,username,created_at,expires_at,ip_address,user_agent,country,city FROM admin_sessions ORDER BY created_at DESC").all();
+    return json({sessions:(results||[]).map((s,i)=>({id:s.token_hash,current:s.token_hash===currentHash,username:s.username,createdAt:s.created_at,expiresAt:s.expires_at,ip:s.ip_address||"",browser:s.user_agent||"",country:s.country||"",city:s.city||""}))},200,headers);
+  }
+  let adminSessionMatch=path.match(/^\/api\/admin\/sessions\/([^/]+)$/);
+  if(adminSessionMatch && method==="DELETE"){
+    const hash=decodeURIComponent(adminSessionMatch[1]);
+    const result=await db.prepare("DELETE FROM admin_sessions WHERE token_hash=?").bind(hash).run();
+    if(!result.meta.changes) throw new HttpError(404,"Sesión no encontrada.");
+    return json({ok:true},200,headers);
+  }
+  if (path === "/api/admin/security-events" && method === "GET") {
+    const {results}=await db.prepare("SELECT id,username,ip_address,user_agent,country,city,successful,created_at FROM admin_login_attempts ORDER BY created_at DESC LIMIT 50").all();
+    return json({events:(results||[]).map(r=>({id:r.id,username:r.username||"",ip:r.ip_address||"",browser:r.user_agent||"",country:r.country||"",city:r.city||"",successful:Boolean(r.successful),createdAt:r.created_at}))},200,headers);
   }
 
   if (path === "/api/maps-status" && method === "GET") {
@@ -869,8 +923,12 @@ async function handleApi(request, env, url, headers) {
   if (path === "/api/admin/drivers/points" && method === "POST") {
     const body=await bodyJson(request);
     const points=Math.max(0,Math.floor(Number(body.points||0)));
-    const result=await db.prepare("UPDATE drivers SET points_balance=?,updated_at=? WHERE public_id=?").bind(points,nowIso(),clean(body.driverId)).run();
-    if (!result.meta.changes) throw new HttpError(404,"Conductor no encontrado.");
+    const drv=await db.prepare("SELECT id,points_balance,first_name,last_name FROM drivers WHERE public_id=?").bind(clean(body.driverId)).first();
+    if(!drv) throw new HttpError(404,"Conductor no encontrado.");
+    const oldPoints=Number(drv.points_balance||0),stamp=nowIso();
+    const result=await db.prepare("UPDATE drivers SET points_balance=?,updated_at=? WHERE public_id=?").bind(points,stamp,clean(body.driverId)).run();
+    await db.prepare("INSERT INTO driver_points_audit(driver_id,old_points,new_points,delta,reason,source,created_at) VALUES(?,?,?,?,?,'admin',?)")
+      .bind(drv.id,oldPoints,points,points-oldPoints,clean(body.reason)||"Ajuste administrativo",stamp).run();
     if (body.depositId) {
       await db.prepare("UPDATE driver_deposits SET status='approved',updated_at=? WHERE id=?").bind(nowIso(),Number(body.depositId)).run();
     } else {
@@ -899,6 +957,7 @@ async function handleApi(request, env, url, headers) {
     if (method==="DELETE") {
       const active=await db.prepare("SELECT id FROM rides WHERE driver_id=? AND status IN ('accepted','driver_arriving','arrived','in_progress') LIMIT 1").bind(d.id).first();
       if (active) throw new HttpError(409,"No puedes eliminar un conductor con un viaje activo.");
+      const deletedName=`${d.first_name} ${d.last_name}`.trim(),deletedAt=nowIso();
       await db.batch([
         db.prepare("DELETE FROM driver_documents WHERE driver_id=?").bind(d.id),
         db.prepare("DELETE FROM driver_sessions WHERE driver_id=?").bind(d.id),
@@ -907,7 +966,7 @@ async function handleApi(request, env, url, headers) {
         db.prepare("DELETE FROM internal_chat_messages WHERE conversation_id=?").bind(d.public_id),
         db.prepare("DELETE FROM drivers WHERE id=?").bind(d.id)
       ]);
-      return json({ok:true},200,headers);
+      return json({ok:true,driverName:deletedName,deletedAt},200,headers);
     }
   }
 
@@ -933,6 +992,17 @@ async function handleApi(request, env, url, headers) {
       return new Response(arr,{headers:{"Content-Type":mime,"Cache-Control":"private, no-store"}});
     }
     return Response.redirect(doc.data_url,302);
+  }
+
+
+  if (path === "/api/admin/wallet" && method === "GET") {
+    const {results}=await db.prepare(`SELECT d.id,d.public_id,d.first_name,d.last_name,d.points_balance,d.updated_at,
+      (SELECT dd.created_at FROM driver_deposits dd WHERE dd.driver_id=d.id AND dd.status='approved' ORDER BY dd.updated_at DESC LIMIT 1) last_recharge_at,
+      (SELECT dd.points_requested FROM driver_deposits dd WHERE dd.driver_id=d.id AND dd.status='approved' ORDER BY dd.updated_at DESC LIMIT 1) last_recharge_points
+      FROM drivers d WHERE d.status!='cancelled' ORDER BY d.points_balance DESC,d.first_name,d.last_name`).all();
+    const audits=await db.prepare(`SELECT a.*,d.public_id,d.first_name,d.last_name FROM driver_points_audit a JOIN drivers d ON d.id=a.driver_id ORDER BY a.created_at DESC LIMIT 100`).all();
+    const alerts=await db.prepare("SELECT id,title,body,entity_id,created_at FROM admin_notifications WHERE kind='points_alert' ORDER BY created_at DESC LIMIT 30").all();
+    return json({drivers:(results||[]).map(r=>({id:r.public_id,name:`${r.first_name} ${r.last_name}`.trim(),points:Number(r.points_balance||0),lastRechargeAt:r.last_recharge_at||null,lastRechargePoints:Number(r.last_recharge_points||0),updatedAt:r.updated_at})),audits:(audits.results||[]).map(a=>({driverId:a.public_id,driverName:`${a.first_name} ${a.last_name}`.trim(),oldPoints:Number(a.old_points),newPoints:Number(a.new_points),delta:Number(a.delta),reason:a.reason,source:a.source,createdAt:a.created_at})),alerts:(alerts.results||[]).map(a=>({id:Number(a.id),title:a.title,body:a.body,driverId:a.entity_id,createdAt:a.created_at}))},200,headers);
   }
 
   if (path === "/api/admin/deposits" && method === "GET") {
@@ -961,6 +1031,7 @@ async function handleApi(request, env, url, headers) {
       const n=Number(unread?.n||0); totalUnread+=n;
       conversations.push({driver:driverView(d),latestMessage:latest?messageView({...latest,driver_name:`${d.first_name} ${d.last_name}`}):null,unreadCount:n});
     }
+    conversations.sort((a,b)=>new Date(b.latestMessage?.createdAt||0)-new Date(a.latestMessage?.createdAt||0));
     return json({conversations,unreadCount:totalUnread},200,headers);
   }
 
@@ -1060,6 +1131,15 @@ async function handleApi(request, env, url, headers) {
   }
 
   // ---------- DISPATCH ----------
+
+  if (path === "/api/dispatch/customer-status" && method === "GET") {
+    const p=phone(url.searchParams.get("phone")); if(!p) throw new HttpError(400,"Teléfono inválido.");
+    const profile=await db.prepare("SELECT * FROM profiles WHERE phone=?").bind(p).first();
+    if(!profile) return json({exists:false,debtDop:0,activeRides:[]},200,headers);
+    const {results}=await db.prepare("SELECT public_id,status,created_at FROM rides WHERE profile_id=? AND status NOT IN ('completed','cancelled') ORDER BY created_at DESC").bind(profile.id).all();
+    return json({exists:true,profile:profileView(profile),debtDop:Number(profile.debt_dop||0),activeRides:(results||[]).map(r=>({id:r.public_id,status:r.status,createdAt:r.created_at}))},200,headers);
+  }
+
   if (path === "/api/dispatch/clients" && method === "GET") {
     const {results}=await db.prepare("SELECT * FROM profiles ORDER BY updated_at DESC,name LIMIT 500").all();
     const clients=[];
@@ -1091,10 +1171,34 @@ async function handleApi(request, env, url, headers) {
     if(action==="cancel" && method==="POST"){
       if(["completed","cancelled"].includes(row.status)) throw new HttpError(409,"El viaje ya está cerrado.");
       const body=await bodyJson(request),stamp=nowIso(),actor=["dispatcher","driver","passenger"].includes(clean(body.actor))?clean(body.actor):"dispatcher";
-      await db.prepare("UPDATE rides SET status='cancelled',cancelled_at=?,closed_at=?,cancellation_reason=?,cancellation_note=?,cancelled_by=? WHERE id=?")
-        .bind(stamp,stamp,clean(body.reason)||"Sin motivo",clean(body.note),actor,row.id).run();
-      await notify(db,"ride_cancelled","Servicio cancelado",`${row.public_id}: ${clean(body.reason)||"Sin motivo"}.`,"ride",row.public_id);
-      return json({ok:true},200,headers);
+      const reason=clean(body.reason)||"Sin motivo",note=clean(body.note);
+      const acceptedMs=row.accepted_at?Date.now()-new Date(row.accepted_at).getTime():0;
+      const lateAccepted=acceptedMs>4*60*1000;
+      let driverPenalty=0, passengerFine=0;
+      if(lateAccepted && actor==="driver" && ["Problema del vehículo","Emergencia del conductor","Otro"].includes(reason) && row.driver_id){
+        const d=await db.prepare("SELECT points_balance,public_id,first_name,last_name FROM drivers WHERE id=?").bind(row.driver_id).first();
+        if(d){
+          const oldPoints=Number(d.points_balance||0),newPoints=Math.max(0,oldPoints-1); driverPenalty=oldPoints-newPoints;
+          if(driverPenalty>0){
+            await db.prepare("UPDATE drivers SET points_balance=?,updated_at=? WHERE id=?").bind(newPoints,stamp,row.driver_id).run();
+            await db.prepare("INSERT INTO driver_points_audit(driver_id,old_points,new_points,delta,reason,source,ride_id,created_at) VALUES(?,?,?,?,?,'ride_cancel',?,?)")
+              .bind(row.driver_id,oldPoints,newPoints,-driverPenalty,reason,row.id,stamp).run();
+            await notify(db,"points_alert","Punto descontado",`${d.first_name} ${d.last_name}: -${driverPenalty} punto por cancelación después de 4 minutos.`,"driver",d.public_id);
+          }
+        }
+      }
+      if(lateAccepted && actor==="passenger" && ["El pasajero pidió cancelar","No necesita el servicio","Emergencia del pasajero","Otro"].includes(reason)){
+        const pf=await db.prepare("SELECT debt_dop FROM profiles WHERE id=?").bind(row.profile_id).first();
+        const oldDebt=Math.max(0,Number(pf?.debt_dop||0)); passengerFine=Math.max(0,Math.min(50,150-oldDebt));
+        if(passengerFine>0){
+          await db.prepare("UPDATE profiles SET debt_dop=MIN(150,COALESCE(debt_dop,0)+?),updated_at=? WHERE id=?").bind(passengerFine,stamp,row.profile_id).run();
+          await notify(db,"passenger_fine","Multa de pasajero",`${row.passenger_name}: +RD$${passengerFine} por cancelación después de 4 minutos.`,"ride",row.public_id);
+        }
+      }
+      await db.prepare("UPDATE rides SET status='cancelled',cancelled_at=?,closed_at=?,cancellation_reason=?,cancellation_note=?,cancelled_by=?,driver_penalty_points=? WHERE id=?")
+        .bind(stamp,stamp,reason,note,actor,driverPenalty,row.id).run();
+      await notify(db,"ride_cancelled","Servicio cancelado",`${row.public_id}: ${reason}.`,"ride",row.public_id);
+      return json({ok:true,driverPenaltyPoints:driverPenalty,passengerFineDop:passengerFine},200,headers);
     }
   }
 

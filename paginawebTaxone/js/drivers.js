@@ -243,15 +243,26 @@ $("#cancel-driver")?.addEventListener("click", async () => {
     } catch(e) { toast(e.message); }
 });
 
-$("#delete-driver")?.addEventListener("click", async () => {
-    if(!selectedDriverId || !confirm("¿Eliminar registro?")) return;
+$("#delete-driver")?.addEventListener("click", () => {
+    if(!selectedDriverId) return;
+    const d=drivers.find(x=>x.id===selectedDriverId);
+    $("#delete-confirm-name").textContent=d?.name||selectedDriverId;
+    setHidden("#driver-delete-confirm", false);
+});
+function closeDeleteConfirm(){setHidden("#driver-delete-confirm", true);}
+$("#close-delete-confirm")?.addEventListener("click",closeDeleteConfirm);
+$("#delete-confirm-no")?.addEventListener("click",closeDeleteConfirm);
+$("#delete-confirm-yes")?.addEventListener("click", async () => {
+    if(!selectedDriverId) return;
     try {
-        await fetchJson(`/api/admin/drivers/${encodeURIComponent(selectedDriverId)}`, { method: "DELETE" });
-        toast("Eliminado.");
-        setHidden("#driver-detail-modal", true);
-        document.body.style.overflow = "";
-        loadDrivers();
+        const result=await fetchJson(`/api/admin/drivers/${encodeURIComponent(selectedDriverId)}`, { method: "DELETE" });
+        closeDeleteConfirm();setHidden("#driver-detail-modal", true);
+        $("#deleted-driver-name").textContent=result.driverName||"Conductor";
+        $("#deleted-driver-date").textContent=`Fecha de eliminación: ${dateLabel(result.deletedAt)}`;
+        setHidden("#driver-delete-success", false);
+        await loadDrivers();
     } catch(e) { toast(e.message); }
 });
+$("#deleted-driver-ok")?.addEventListener("click",()=>{setHidden("#driver-delete-success", true);document.body.style.overflow="";});
 
 loadDrivers();

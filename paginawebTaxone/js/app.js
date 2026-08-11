@@ -272,15 +272,67 @@ $("#refresh-trips")?.addEventListener("click",loadDispatchTrips);
 $$("[data-trip-filter]").forEach(b=>b.addEventListener("click",()=>{tripFilter=b.dataset.tripFilter;$$("[data-trip-filter]").forEach(x=>x.classList.toggle("active",x===b));renderTrips();}));
 
 /* cancelar / llegó / ETA */
-const CANCEL_REASONS={dispatcher:["Error del Dispatcher","Viaje duplicado","Cancelar y enviar de nuevo","El pasajero pidió cancelar","No hay conductores aceptando el viaje","Otro"],driver:["Problema del vehículo","Emergencia del conductor","No puede llegar a la recogida","El pasajero pidió cancelar","Otro"],passenger:["Cambió de planes","No necesita el servicio","Problema con la recogida","Emergencia del pasajero","Otro"]};
+const CANCEL_REASONS={dispatcher:["Error del Dispatcher","Viaje duplicado","Cancelar y enviar de nuevo","El pasajero pidió cancelar","No hay conductores aceptando el viaje","Otro"],driver:["Problema del vehículo","Emergencia del conductor","No puede llegar a la recogida","El pasajero pidió cancelar","Otro"],passenger:["El pasajero pidió cancelar","No necesita el servicio","Emergencia del pasajero","Otro"]};
 let cancelRideId="",cancelActor="dispatcher";
 function renderCancelReasons(){const box=$("#cancel-reasons");if(!box)return;box.innerHTML=(CANCEL_REASONS[cancelActor]||[]).map((r,i)=>`<label><input type="radio" name="cancel-reason" value="${escapeHtml(r)}" ${i===0?"checked":""}> ${escapeHtml(r)}</label>`).join("");}
-function openCancelRide(id){cancelRideId=id;cancelActor="dispatcher";$$("[data-cancel-actor]").forEach(b=>b.classList.toggle("active",b.dataset.cancelActor==="dispatcher"));renderCancelReasons();$("#cancel-note").value="";$("#cancel-ride-title").textContent=`Cancelar ${id}`;$("#cancel-ride-modal").hidden=false;}window.openCancelRide=openCancelRide;
+function openCancelRide(id){cancelRideId=id;cancelActor="dispatcher";$$("[data-cancel-actor]").forEach(b=>b.classList.toggle("active",b.dataset.cancelActor==="dispatcher"));renderCancelReasons();$("#cancel-note").value="";if($("#cancel-copy-ride"))$("#cancel-copy-ride").checked=false;$("#cancel-ride-title").textContent=`Cancelar ${id}`;$("#cancel-ride-modal").hidden=false;}window.openCancelRide=openCancelRide;
 $$("[data-cancel-actor]").forEach(b=>b.addEventListener("click",()=>{cancelActor=b.dataset.cancelActor;$$("[data-cancel-actor]").forEach(x=>x.classList.toggle("active",x===b));renderCancelReasons();}));
-$("#confirm-cancel-ride")?.addEventListener("click",async()=>{const reason=$('input[name="cancel-reason"]:checked')?.value;if(!cancelRideId||!reason)return;try{await fetchJson(`/api/dispatch/rides/${encodeURIComponent(cancelRideId)}/cancel`,{method:"POST",body:{actor:cancelActor,reason,note:$("#cancel-note").value}});$("#cancel-ride-modal").hidden=true;showToast("Servicio cancelado.");detailTripId="";$("#trip-details-panel").style.display="none";$("#booking-form-content").style.display="block";await loadDispatchTrips();renderSelectionMarkers();calculateRoadRoute();}catch(e){showToast(e.message);}});
+$("#confirm-cancel-ride")?.addEventListener("click",async()=>{
+  const reason=$('input[name="cancel-reason"]:checked')?.value,note=$("#cancel-note").value.trim();if(!cancelRideId||!reason)return;
+  if(reason==="Otro"&&!note)return showToast("Escribe la nota para explicar el motivo.");
+  const original=dispatchTrips.find(x=>x.id===cancelRideId),copyRide=$("#cancel-copy-ride")?.checked;
+  try{
+    const result=await fetchJson(`/api/dispatch/rides/${encodeURIComponent(cancelRideId)}/cancel`,{method:"POST",body:{actor:cancelActor,reason,note}});
+    $("#cancel-ride-modal").hidden=true;detailTripId="";$("#trip-details-panel").style.display="none";$("#booking-form-content").style.display="block";
+    await loadDispatchTrips();
+    if(copyRide&&original)await restoreRideToForm(original);else{renderSelectionMarkers();calculateRoadRoute();}
+    const extra=result.driverPenaltyPoints?` Se descontó ${result.driverPenaltyPoints} punto al conductor.`:result.passengerFineDop?` Se agregó una multa de RD$${result.passengerFineDop} al pasajero.`:"";
+    showToast("Servicio cancelado."+extra);
+  }catch(e){showToast(e.message);}
+});
 async function markArrived(id){try{await fetchJson(`/api/dispatch/rides/${encodeURIComponent(id)}/status`,{method:"POST",body:{action:"arrived"}});showToast("Conductor marcado como: Llegó.");await loadDispatchTrips();if(detailTripId===id)viewTripDetails(id);}catch(e){showToast(e.message);}}window.markArrived=markArrived;
 async function refreshEta(id){const t=dispatchTrips.find(x=>x.id===id),d=connectedDrivers.find(x=>x.id===t?.driverId);if(!t||!d?.location){$("#eta-live").textContent="Ubicación del conductor no disponible";return;}try{const coords=`${Number(d.location.lon)},${Number(d.location.lat)};${Number(t.pickupLon)},${Number(t.pickupLat)}`,data=await fetchJson(`/api/route?coordinates=${encodeURIComponent(coords)}`),r=data.routes?.[0];if(!r)throw new Error();$("#eta-live").textContent=`Llega en ${Math.max(1,Math.ceil(r.duration/60))} min`;$("#eta-updated").textContent=`Actualizado ${new Date().toLocaleTimeString("es-DO")}`;}catch{$("#eta-live").textContent="No se pudo calcular ahora.";}}
 function openEta(id){clearInterval(etaTimer);const t=dispatchTrips.find(x=>x.id===id);$("#eta-driver-name").textContent=t?.driver||"Conductor";$("#eta-modal").hidden=false;refreshEta(id);etaTimer=setInterval(()=>refreshEta(id),5000);}window.openEta=openEta;
+
+
+async function restoreRideToForm(t){
+  clearBookingForm();
+  serviceType.value=t.passengerType==="registered"?"Registrado":"Invitado";toggleServiceFields();
+  if(serviceType.value==="Invitado"){
+    $("#guest-phone").value=t.phone||"";$("#guest-name").value=t.passenger||"";
+  }else{
+    let c=registeredClients.find(x=>x.phone===t.phone);if(!c){await loadRegisteredClients();c=registeredClients.find(x=>x.phone===t.phone);}
+    if(c)selectCustomer(c.id);
+  }
+  selectedLocations.pickup={address:t.pickup,lat:Number(t.pickupLat),lon:Number(t.pickupLon)};pickupInput.value=t.pickup||"";
+  selectedLocations.destination={address:t.destination,lat:Number(t.destinationLat),lon:Number(t.destinationLon)};destinationInput.value=t.destination||"";
+  for(const s of (t.stops||[])){addRouteStop();const rs=routeStops[routeStops.length-1];rs.location={address:s.address,lat:Number(s.lat),lon:Number(s.lon)};rs.input.value=s.address;}
+  $("#dispatch-note").value=t.note||"";$("#payment-method-select").value=t.paymentMethod||"Efectivo";
+  if(t.driverId&&connectedDrivers.some(d=>d.id===t.driverId&&d.connectionState!=="busy")){selectedDriverId=t.driverId;updateAssignedDriverSummary();$("#driver-assign-search").value=connectedDrivers.find(d=>d.id===t.driverId)?.name||"";}
+  renderSelectionMarkers();await calculateRoadRoute();fitCurrentRoute();setMapSelection("pickup");showToast("Viaje copiado al formulario.");
+}
+let lastCustomerStatusPhone="",duplicateResolver=null;
+async function getCustomerStatus(phoneValue,showDebt=true){
+  const p=String(phoneValue||"").trim();if(p.replace(/\D/g,"").length<7)return null;
+  try{
+    const s=await fetchJson(`/api/dispatch/customer-status?phone=${encodeURIComponent(p)}`);
+    if(showDebt&&s.exists&&Number(s.debtDop||0)>0&&p!==lastCustomerStatusPhone){
+      lastCustomerStatusPhone=p;$("#customer-status-title").textContent=`${s.profile?.name||"Cliente"} tiene una multa pendiente`;
+      $("#customer-status-content").innerHTML=`<div class="debt-highlight">RD$${Number(s.debtDop).toLocaleString("es-DO")}</div><p>Se cobrarán hasta RD$50 adicionales en cada servicio terminado hasta saldar la multa.</p>`;
+      $("#customer-status-modal").hidden=false;
+    }
+    return s;
+  }catch{return null;}
+}
+function confirmDuplicateRide(status){
+  if(!status?.activeRides?.length)return Promise.resolve(true);
+  $("#duplicate-ride-text").textContent=`Este número tiene ${status.activeRides.length} servicio(s) activo(s). ¿Deseas enviar otro servicio?`;
+  $("#duplicate-ride-modal").hidden=false;
+  return new Promise(resolve=>{duplicateResolver=resolve;});
+}
+$("#duplicate-yes")?.addEventListener("click",()=>{$("#duplicate-ride-modal").hidden=true;duplicateResolver?.(true);duplicateResolver=null;});
+$("#duplicate-no")?.addEventListener("click",()=>{$("#duplicate-ride-modal").hidden=true;duplicateResolver?.(false);duplicateResolver=null;});$("#duplicate-x")?.addEventListener("click",()=>{$("#duplicate-ride-modal").hidden=true;duplicateResolver?.(false);duplicateResolver=null;});
+$("#guest-phone")?.addEventListener("blur",()=>getCustomerStatus($("#guest-phone").value,true));
 
 /* crear reserva */
 function scheduledValue(){
@@ -294,6 +346,7 @@ let pendingRidePayload=null;
 bookingForm?.addEventListener("submit",async e=>{
   e.preventDefault();const guest=serviceType.value==="Invitado";const name=guest?$("#guest-name").value:selectedCustomer?.name,phone=guest?$("#guest-phone").value:selectedCustomer?.phone;
   if(!name||!phone||!selectedLocations.pickup||!selectedLocations.destination)return showToast("Completa pasajero, recogida y destino.");
+  const customerStatus=await getCustomerStatus(phone,false);if(customerStatus?.activeRides?.length&&!await confirmDuplicateRide(customerStatus))return;
   try{const scheduledAt=scheduledValue(),stops=routeStops.filter(s=>s.location).map(s=>s.location);const est=await fetchJson("/api/rides/estimate",{method:"POST",body:{pickup:selectedLocations.pickup,destination:selectedLocations.destination,stops}}),estimate=est.estimate||{};
     pendingRidePayload={phone,name,pickup:selectedLocations.pickup,destination:selectedLocations.destination,stops,driverId:selectedDriverId||undefined,note:$("#dispatch-note").value,scheduledAt,passengerCount:Number($("#passenger-count-select").value?.match(/\d+/)?.[0]||1),paymentMethod:$("#payment-method-select").value};
     $("#fare-modal-route").innerHTML=`<b>${escapeHtml(selectedLocations.pickup.address)}</b><span>→</span><b>${escapeHtml(selectedLocations.destination.address)}</b>`;$("#fare-modal-price").textContent=fmtPrice(estimate.priceDop);$("#fare-modal-distance").textContent=`${Number(estimate.distanceKm||0).toFixed(2)} km`;$("#fare-modal-duration").textContent=`${Number(estimate.durationMin||0)} min`;$("#fare-modal").hidden=false;
@@ -345,11 +398,23 @@ $("#btn-whatsapp-toggle")?.addEventListener("click",()=>toggleChat("whatsapp"));
 $("#send-internal-chat")?.addEventListener("click",async()=>{const input=$("#internal-chat-input"),message=input.value.trim();if(!message||!floatingChatDriverId)return showToast("Selecciona un conductor.");try{await fetchJson(`/api/admin/chats/${encodeURIComponent(floatingChatDriverId)}/messages`,{method:"POST",body:{message}});input.value="";await renderFloatingPrivateChats();showToast("Mensaje enviado");}catch(e){showToast(e.message);}});
 
 let trafficLayer=null;
-const GOOGLE_DARK_STYLES=[{elementType:"geometry",stylers:[{color:"#1d2c4d"}]},{elementType:"labels.text.fill",stylers:[{color:"#8ec3b9"}]},{elementType:"labels.text.stroke",stylers:[{color:"#1a3646"}]},{featureType:"road",elementType:"geometry",stylers:[{color:"#304a7d"}]},{featureType:"road",elementType:"labels.text.fill",stylers:[{color:"#98a5be"}]},{featureType:"water",elementType:"geometry",stylers:[{color:"#0e1626"}]}];
+const GOOGLE_DARK_STYLES=[{elementType:"geometry",stylers:[{color:"#d8e0e5"}]},{elementType:"labels.text.fill",stylers:[{color:"#344955"}]},{elementType:"labels.text.stroke",stylers:[{color:"#f4f7f8"}]},{featureType:"road",elementType:"geometry",stylers:[{color:"#b9c6cc"}]},{featureType:"road",elementType:"labels.text.fill",stylers:[{color:"#253c49"}]},{featureType:"water",elementType:"geometry",stylers:[{color:"#8bb4c7"}]},{featureType:"poi",elementType:"geometry",stylers:[{color:"#cad6cd"}]}];
 function applyMapStyle(mode){if(mapEngine==="google")map.setOptions({styles:mode==="dark"?GOOGLE_DARK_STYLES:null});else if(map){if(baseTileLayer)map.removeLayer(baseTileLayer);if(darkTileLayer)map.removeLayer(darkTileLayer);(mode==="dark"?darkTileLayer:baseTileLayer)?.addTo(map);}}
 $$('input[name="map-style"]').forEach(r=>r.addEventListener("change",()=>{if(r.checked)applyMapStyle(r.value);}));
 async function setupTraffic(){const toggle=$("#traffic-toggle"),status=$("#traffic-status");if(!toggle)return;try{const s=await fetchJson("/api/maps-status");status.textContent=s.trafficAvailable?`Tráfico en tiempo real · ${s.provider||"proveedor"}`:"Tráfico: proveedor no configurado";toggle.disabled=!s.trafficAvailable;toggle.addEventListener("change",()=>{if(mapEngine==="google"&&window.google?.maps){if(!googleTrafficLayer)googleTrafficLayer=new google.maps.TrafficLayer();googleTrafficLayer.setMap(toggle.checked?map:null);}else{if(toggle.checked){trafficLayer=L.tileLayer("/api/traffic/{z}/{x}/{y}",{opacity:.72,maxZoom:19}).addTo(map);}else if(trafficLayer){map.removeLayer(trafficLayer);trafficLayer=null;}}});}catch{status.textContent="Tráfico no disponible";toggle.disabled=true;}}
 async function loadAdminSessionInfo(){const box=$("#admin-session-info");if(!box)return;try{const s=await fetchJson("/api/admin/session-info"),ua=s.browser||"";let browser=ua.includes("Edg/")?"Microsoft Edge":ua.includes("Chrome/")?"Google Chrome":ua.includes("Firefox/")?"Firefox":ua.includes("Safari/")?"Safari":"Navegador";box.innerHTML=`<b>Inicio de sesión</b><span>${escapeHtml(s.city||"")} ${escapeHtml(s.country||"")}</span><span>${escapeHtml(browser)}</span><span>IP: ${escapeHtml(s.ip||"—")}</span><small>${escapeHtml(fmtDate(s.loginAt))}</small>`;}catch{box.innerHTML="<b>Sesión administrativa</b><span>Información no disponible</span>";}}
+
+
+async function loadSecurityPanel(){
+  const sessionsBox=$("#security-sessions"),eventsBox=$("#security-events");if(!sessionsBox||!eventsBox)return;
+  try{
+    const [s,e]=await Promise.all([fetchJson("/api/admin/sessions"),fetchJson("/api/admin/security-events")]);
+    sessionsBox.innerHTML=(s.sessions||[]).map(x=>`<article class="security-row ${x.current?"current":""}"><div><b>${x.current?"Esta sesión":"Otra sesión"} · ${escapeHtml(x.ip||"IP no disponible")}</b><span>${escapeHtml(x.city||"")} ${escapeHtml(x.country||"")}</span><small>${escapeHtml(fmtDate(x.createdAt))}</small></div>${x.current?"<em>Actual</em>":`<button data-kill-session="${escapeHtml(x.id)}">Cerrar sesión</button>`}</article>`).join("")||"<p>No hay sesiones.</p>";
+    eventsBox.innerHTML=(e.events||[]).slice(0,12).map(x=>`<article class="security-row ${x.successful?"":"failed"}"><div><b>${x.successful?"Inicio correcto":"Intento fallido"} · ${escapeHtml(x.ip||"IP no disponible")}</b><span>${escapeHtml(x.city||"")} ${escapeHtml(x.country||"")}</span><small>${escapeHtml(fmtDate(x.createdAt))}</small></div></article>`).join("");
+    sessionsBox.querySelectorAll("[data-kill-session]").forEach(b=>b.addEventListener("click",async()=>{try{await fetchJson(`/api/admin/sessions/${encodeURIComponent(b.dataset.killSession)}`,{method:"DELETE"});showToast("Sesión cerrada.");loadSecurityPanel();}catch(err){showToast(err.message);}}));
+  }catch(err){showToast(err.message);}
+}
+$("#open-security")?.addEventListener("click",e=>{e.preventDefault();$("#security-modal").hidden=false;loadSecurityPanel();});
 
 /* logout completo */
 window.adminLogout=async function(){
