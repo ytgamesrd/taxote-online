@@ -57,9 +57,29 @@
     if(overlay)overlay.hidden=true;
     trigger?.setAttribute("aria-expanded","false");
   };
-  trigger?.addEventListener("click",e=>{e.preventDefault();e.stopPropagation();menu.classList.contains("open")?closeMenu():openMenu();});
-  close?.addEventListener("click",closeMenu);
-  overlay?.addEventListener("click",closeMenu);
+  // IMPORTANTE: algunas páginas antiguas todavía tienen su propio listener del menú.
+  // Usamos captura + stopImmediatePropagation para que SOLO este controlador universal
+  // responda al clic y no se abra/cierre dos veces en el mismo evento.
+  trigger?.addEventListener("click",e=>{
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    e.stopPropagation();
+    menu.classList.contains("open") ? closeMenu() : openMenu();
+  }, true);
+
+  close?.addEventListener("click",e=>{
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    e.stopPropagation();
+    closeMenu();
+  }, true);
+
+  overlay?.addEventListener("click",e=>{
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    e.stopPropagation();
+    closeMenu();
+  }, true);
 
   q("#universal-admin-logout")?.addEventListener("click",async e=>{
     e.preventDefault();
