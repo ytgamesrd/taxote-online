@@ -1,7 +1,7 @@
 const $ = (selector) => document.querySelector(selector);
 const escapeHtml = (value) => String(value ?? "").replace(/[&<>'"]/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" })[character]);
 let conversations = [];
-let selectedChannel = "public";
+let selectedChannel = "private";
 let selectedDriverId = null;
 let currentMessagesFingerprint = "";
 let previousUnreadTotal = null;
@@ -65,17 +65,7 @@ async function loadConversations() {
   } catch (error) { toast(error.message); }
 }
 
-function selectPublic() {
-  selectedChannel = "public";
-  selectedDriverId = null;
-  $("#public-conversation").classList.add("active");
-  $("#current-avatar").textContent = "▤";
-  $("#current-kicker").textContent = "CANAL GENERAL";
-  $("#current-name").textContent = "Chat público";
-  $("#current-status").textContent = "Visible para todos los conductores";
-  renderConversations();
-  loadMessages(true);
-}
+
 
 async function selectPrivate(driverId) {
   const item = conversations.find((conversation) => conversation.driver.id === driverId);
@@ -106,7 +96,7 @@ function renderMessages(messages, forceScroll = false) {
 
 async function loadMessages(forceScroll = false) {
   const selectedAtStart = `${selectedChannel}:${selectedDriverId || ""}`;
-  const url = selectedChannel === "public" ? "/api/admin/chats/public" : `/api/admin/chats/${encodeURIComponent(selectedDriverId)}/messages`;
+  if(!selectedDriverId)return toast("Selecciona un conductor."); const url = `/api/admin/chats/${encodeURIComponent(selectedDriverId)}/messages`;
   try {
     const data = await api(url);
     if (selectedAtStart !== `${selectedChannel}:${selectedDriverId || ""}`) return;
@@ -124,7 +114,7 @@ $("#message-form").addEventListener("submit", async (event) => {
   const button = event.currentTarget.querySelector("button");
   button.disabled = true;
   try {
-    const url = selectedChannel === "public" ? "/api/admin/chats/public" : `/api/admin/chats/${encodeURIComponent(selectedDriverId)}/messages`;
+    if(!selectedDriverId)return toast("Selecciona un conductor."); const url = `/api/admin/chats/${encodeURIComponent(selectedDriverId)}/messages`;
     await api(url, { method: "POST", body: { message, photo: await fileAsDataUrl(photoFile) } });
     input.value = "";
     photoInput.value = "";
@@ -134,7 +124,7 @@ $("#message-form").addEventListener("submit", async (event) => {
   } catch (error) { toast(error.message); } finally { button.disabled = false; input.focus(); }
 });
 
-$("#public-conversation").addEventListener("click", selectPublic);
+
 $("#conversation-search").addEventListener("input", renderConversations);
 $("#message-photo").addEventListener("change", (event) => {
   enableChatAlerts();
@@ -144,5 +134,7 @@ $("#message-photo").addEventListener("change", (event) => {
   label.hidden = !file;
 });
 document.addEventListener("pointerdown", enableChatAlerts, { once: true });
-loadConversations().then(selectPublic);
+loadConversations();
 setInterval(() => { loadConversations(); loadMessages(); }, 3000);
+
+const chatMenu=$("#chat-side-menu"),chatOverlay=$("#chat-drawer-overlay");$("#chat-menu-button")?.addEventListener("click",()=>{chatMenu?.classList.add("open");if(chatOverlay)chatOverlay.hidden=false;});$("#chat-close-menu")?.addEventListener("click",()=>{chatMenu?.classList.remove("open");if(chatOverlay)chatOverlay.hidden=true;});chatOverlay?.addEventListener("click",()=>{chatMenu?.classList.remove("open");chatOverlay.hidden=true;});$("#chat-logout")?.addEventListener("click",async()=>{try{await api("/api/admin/logout",{method:"POST"});}catch{}location.replace("/admin-login");});

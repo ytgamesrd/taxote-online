@@ -4,8 +4,8 @@ const SESSION_DAYS = 30;
 const ADMIN_USERNAME_FALLBACK = "TAXOTEadmin1995";
 const ADMIN_PASSWORD_FALLBACK = "123Taxote123@1995";
 const FARE_BASE_DOP = 150;
-const FARE_PER_KM_DOP = 32;
-const FARE_PER_MIN_DOP = 4;
+const FARE_PER_KM_DOP = 21;
+const FARE_PER_MIN_DOP = 0;
 const FARE_MIN_DOP = 250;
 let schemaReady = false;
 
@@ -129,7 +129,11 @@ async function ensureSchema(db) {
   const migrations = [
     "ALTER TABLE internal_chat_messages ADD COLUMN photo_data TEXT",
     "ALTER TABLE drivers ADD COLUMN current_accuracy REAL",
-    "ALTER TABLE drivers ADD COLUMN current_speed_kph REAL"
+    "ALTER TABLE drivers ADD COLUMN current_speed_kph REAL",
+    "ALTER TABLE admin_sessions ADD COLUMN ip_address TEXT",
+    "ALTER TABLE admin_sessions ADD COLUMN user_agent TEXT",
+    "ALTER TABLE admin_sessions ADD COLUMN country TEXT",
+    "ALTER TABLE admin_sessions ADD COLUMN city TEXT"
   ];
   for (const sql of migrations) { try { await db.prepare(sql).run(); } catch {} }
   schemaReady = true;
@@ -175,8 +179,12 @@ async function adminLogin(request, env, headers) {
   const token = crypto.randomUUID().replaceAll("-", "") + crypto.randomUUID().replaceAll("-", "");
   const expiresAt = new Date(Date.now() + SESSION_DAYS * 86400000).toISOString();
   await db.prepare("DELETE FROM admin_sessions WHERE expires_at<=?").bind(nowIso()).run();
-  await db.prepare("INSERT INTO admin_sessions(token_hash,username,expires_at,created_at) VALUES(?,?,?,?)")
-    .bind(await sha256(token), expectedUser, expiresAt, nowIso()).run();
+  const ip = request.headers.get("CF-Connecting-IP") || request.headers.get("X-Forwarded-For") || "";
+  const ua = request.headers.get("User-Agent") || "";
+  const country = request.cf?.country || request.headers.get("CF-IPCountry") || "";
+  const city = request.cf?.city || "";
+  await db.prepare("INSERT INTO admin_sessions(token_hash,username,expires_at,created_at,ip_address,user_agent,country,city) VALUES(?,?,?,?,?,?,?,?)")
+    .bind(await sha256(token), expectedUser, expiresAt, nowIso(), ip, ua, country, city).run();
   return json({ ok: true }, 200, {
     "Set-Cookie": `taxote_admin_session=${token}; Path=/; Secure; SameSite=Lax; HttpOnly; Max-Age=${SESSION_DAYS * 86400}`,
     ...headers
@@ -299,13 +307,14 @@ function haversineKm(a, b) {
   const q = Math.sin(dLat/2)**2 + Math.cos(rad(a.lat))*Math.cos(rad(b.lat))*Math.sin(dLon/2)**2;
   return 2 * R * Math.asin(Math.sqrt(q));
 }
-async function estimateRoute(pickup, destination) {
+async function estimateRoute(pickup, destination, stops = []) {
   const a = { lat: Number(pickup.lat), lon: Number(pickup.lon) };
   const b = { lat: Number(destination.lat), lon: Number(destination.lon) };
   if (![a.lat,a.lon,b.lat,b.lon].every(Number.isFinite)) throw new HttpError(400, "Coordenadas inválidas.");
   let distanceKm, durationMin;
   try {
-    const coords = `${a.lon},${a.lat};${b.lon},${b.lat}`;
+    const pts=[a,...(Array.isArray(stops)?stops:[]).filter(s=>Number.isFinite(Number(s?.lat))&&Number.isFinite(Number(s?.lon))).map(s=>({lat:Number(s.lat),lon:Number(s.lon)})),b];
+    const coords = pts.map(p=>`${p.lon},${p.lat}`).join(";");
     const resp = await fetch(`https://router.project-osrm.org/route/v1/driving/${coords}?overview=false`);
     const data = await resp.json();
     if (resp.ok && data.routes?.[0]) {
@@ -317,7 +326,8 @@ async function estimateRoute(pickup, destination) {
     distanceKm = Math.max(0.1, haversineKm(a,b) * 1.25);
     durationMin = Math.max(2, Math.ceil(distanceKm / 25 * 60));
   }
-  const priceDop = Math.max(FARE_MIN_DOP, Math.round(FARE_BASE_DOP + distanceKm * FARE_PER_KM_DOP + durationMin * FARE_PER_MIN_DOP));
+  const rawPrice = FARE_BASE_DOP + distanceKm * FARE_PER_KM_DOP;
+  const priceDop = Math.max(FARE_MIN_DOP, Math.round(rawPrice / 50) * 50);
   return { distanceKm, durationMin, priceDop };
 }
 async function resolveRideProfile(request, db, body) {
@@ -495,7 +505,7 @@ async function handleApi(request, env, url, headers) {
   if (path === "/api/rides/estimate" && method === "POST") {
     const body=await bodyJson(request);
     if (!body.pickup || !body.destination) throw new HttpError(400,"Selecciona recogida y destino.");
-    const estimate=await estimateRoute(body.pickup,body.destination);
+    const estimate=await estimateRoute(body.pickup,body.destination,body.stops||[]);
     return json({pickup:body.pickup,destination:body.destination,estimate},200,headers);
   }
 
@@ -503,7 +513,7 @@ async function handleApi(request, env, url, headers) {
     const body=await bodyJson(request);
     if (!body.pickup || !body.destination) throw new HttpError(400,"Selecciona recogida y destino.");
     const profile=await resolveRideProfile(request,db,body);
-    const estimate=await estimateRoute(body.pickup,body.destination);
+    const estimate=await estimateRoute(body.pickup,body.destination,body.stops||[]);
     const stamp=nowIso(),rid=id("RID");
     let driverDbId=null;
     if (body.driverId) {
@@ -805,6 +815,29 @@ async function handleApi(request, env, url, headers) {
       .bind(rid,"driver",d.public_id,`${d.first_name} ${d.last_name}`,body.rideId||null,clean(body.category)||"Otro",clean(body.description),body.photo||body.photoData||null,stamp,stamp).run();
     await notify(db,"report","Nuevo reporte",`Reporte de ${d.first_name} ${d.last_name}.`,"report",rid);
     return json({ok:true,id:rid},201,headers);
+  }
+
+
+  // ---------- ADMIN: SESIÓN ACTUAL ----------
+  if (path === "/api/admin/session-info" && method === "GET") {
+    const token=parseCookies(request).taxote_admin_session;
+    if(!token) throw new HttpError(401,"No autorizado.");
+    const row=await db.prepare("SELECT username,created_at,expires_at,ip_address,user_agent,country,city FROM admin_sessions WHERE token_hash=?").bind(await sha256(token)).first();
+    if(!row) throw new HttpError(401,"Sesión expirada.");
+    return json({username:row.username,loginAt:row.created_at,expiresAt:row.expires_at,ip:row.ip_address||"",browser:row.user_agent||"",country:row.country||"",city:row.city||""},200,headers);
+  }
+
+  if (path === "/api/maps-status" && method === "GET") {
+    return json({trafficAvailable:Boolean(env.TRAFFIC_TILE_URL),provider:env.TRAFFIC_PROVIDER||null},200,headers);
+  }
+  let trafficMatch=path.match(/^\/api\/traffic\/(\d+)\/(\d+)\/(\d+)$/);
+  if(trafficMatch && method==="GET"){
+    if(!env.TRAFFIC_TILE_URL) throw new HttpError(503,"El tráfico en tiempo real todavía no tiene proveedor configurado.");
+    const upstream=String(env.TRAFFIC_TILE_URL).replaceAll("{z}",trafficMatch[1]).replaceAll("{x}",trafficMatch[2]).replaceAll("{y}",trafficMatch[3]);
+    const r=await fetch(upstream,{headers:{"User-Agent":"TAXOTE/1.0"}});
+    if(!r.ok) throw new HttpError(502,"El proveedor de tráfico no respondió.");
+    const h=new Headers(r.headers); h.set("Cache-Control","public, max-age=30");
+    return new Response(r.body,{status:r.status,headers:h});
   }
 
   // ---------- ADMIN: NOTIFICACIONES ----------

@@ -59,7 +59,7 @@
           </table>
         </div>
       </section>
-    </main>
+    </main><div id="report-photo-modal" class="taxote-modal" hidden><div class="taxote-modal-card"><button class="modal-x" type="button" onclick="document.getElementById('report-photo-modal').hidden=true">×</button><h2>Imagen del reporte</h2><img id="report-photo-preview" style="display:block;max-width:100%;max-height:70vh;margin:auto;border-radius:12px" alt="Imagen del reporte"></div></div>
 
     <script>
       const $ = (s) => document.querySelector(s);
@@ -70,7 +70,7 @@
           renderReports(data);
         } catch (e) { console.error(e); }
       }
-      function renderReports(reports) {
+      let currentReports=[]; function showReportPhoto(id){const r=currentReports.find(x=>x.public_id===id);if(!r?.photo_data)return;document.getElementById('report-photo-preview').src=r.photo_data;document.getElementById('report-photo-modal').hidden=false;} function renderReports(reports) { currentReports=reports;
         const body = $('#reports-body');
         if (!reports.length) {
           body.innerHTML = '<tr><td colspan="10" class="history-empty">No hay reportes registrados.</td></tr>';
@@ -85,7 +85,7 @@
             <td>${r.ride_id || '—'}</td>
             <td><b>${r.category}</b></td>
             <td>${r.description}</td>
-            <td>${r.photo_data ? `<img src="${r.photo_data}" class="report-photo" onclick="window.open(this.src)">` : '—'}</td>
+            <td>${r.photo_data ? `<button class="report-photo-btn" type="button" onclick="showReportPhoto('${r.public_id}')"><img src="${r.photo_data}" class="report-photo"></button>` : '—'}</td>
             <td><span class="status-chip status-${r.status}">${r.status === 'new' ? 'Nuevo' : 'Resuelto'}</span></td>
             <td>
               ${r.status === 'new' ? `<button onclick="resolveReport('${r.public_id}')" style="padding:4px 8px;background:#0b2e47;color:#fff;border:0;border-radius:4px;cursor:pointer;">Resolver</button>` : '—'}

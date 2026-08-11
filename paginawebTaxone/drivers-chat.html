@@ -13,17 +13,18 @@
   <link rel="stylesheet" href="css/drivers-chat-media.css?v=20260806-1" />
 </head>
 <body>
-  <header class="chat-topbar"><a class="chat-brand" href="/"><span>T</span>TAXOTE</a><nav><a class="back-link" href="/conversation-history.html">Historial de conversación</a><a class="back-link" href="/">← Central de reservas</a></nav></header>
+  <header class="chat-topbar"><button id="chat-menu-button" class="chat-menu-button" type="button" aria-label="Abrir menú">☰</button><a class="chat-brand" href="/"><span>T</span>TAXOTE</a><nav><a class="back-link" href="/conversation-history.html">Historial de conversación</a><a class="back-link" href="/">← Central de reservas</a></nav></header>
+  <div id="chat-drawer-overlay" class="chat-drawer-overlay" hidden></div><aside id="chat-side-menu" class="chat-side-menu"><button id="chat-close-menu" type="button">×</button><a href="/">＋ Central de reservas</a><a href="/drivers.html">♙ Conductores</a><a href="/deposits.html">💰 Depósitos</a><a href="/history.html">◷ Historial</a><a href="/conversation-history.html">▧ Historial conversación</a><a href="/reports.html">▦ Reportes</a><button id="chat-logout" type="button">× Cerrar sesión</button></aside>
   <main class="chat-layout">
     <aside class="conversation-panel">
-      <div class="conversation-heading"><small>COMUNICACIÓN EN TIEMPO REAL</small><h1>Chat de conductores</h1><p>Mensajes públicos y privados con la flota real.</p></div>
+      <div class="conversation-heading"><small>COMUNICACIÓN EN TIEMPO REAL</small><h1>Chat de conductores</h1><p>Mensajes privados con los conductores TAXOTE.</p></div>
       <label class="chat-search"><span>⌕</span><input id="conversation-search" type="search" placeholder="Buscar conductor" /></label>
-      <button id="public-conversation" class="conversation-card public active" type="button"><span class="conversation-avatar">▤</span><span><b>Chat público</b><small>Todos los conductores</small></span></button>
+      
       <div id="conversation-list" class="conversation-list"></div>
       <div id="conversation-empty" class="conversation-empty" hidden>No hay conductores registrados.</div>
     </aside>
     <section class="message-panel">
-      <header class="message-heading"><div id="current-avatar" class="current-avatar">▤</div><div><small id="current-kicker">CANAL GENERAL</small><h2 id="current-name">Chat público</h2><p id="current-status">Visible para todos los conductores TAXOTE</p></div></header>
+      <header class="message-heading"><div id="current-avatar" class="current-avatar">T</div><div><small id="current-kicker">PRIVADO</small><h2 id="current-name">Selecciona un conductor</h2><p id="current-status">Solo la Central y el conductor verán la conversación.</p></div></header>
       <div id="message-list" class="message-list"><div class="messages-empty"><span>▤</span><b>La conversación está lista</b><small>Los mensajes aparecerán aquí en tiempo real.</small></div></div>
       <form id="message-form" class="message-composer"><label class="photo-picker" title="Enviar una foto"><input id="message-photo" type="file" accept="image/jpeg,image/png,image/webp" /><span>▧</span></label><input id="message-input" maxlength="1000" autocomplete="off" placeholder="Escribe un mensaje o envía una foto" /><span id="photo-name" class="photo-name" hidden></span><button type="submit">Enviar <span>➤</span></button></form>
     </section>
